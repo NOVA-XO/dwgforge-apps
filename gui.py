@@ -30,7 +30,7 @@ from typing import Any
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 
-from parts import Elbow, Flange, Pipe, Reducer, Tee, emit, run  # noqa: E402
+from parts import CheckValve, Elbow, Flange, Pipe, Reducer, Tee, emit, run  # noqa: E402
 from partsan import load_table  # noqa: E402
 
 PORT = 8765
@@ -44,6 +44,7 @@ PART_TYPES: dict[str, Any] = {
     "Tee": Tee,
     "Reducer": Reducer,
     "Flange": Flange,
+    "CheckValve": CheckValve,
 }
 
 LABELS = {
@@ -52,6 +53,7 @@ LABELS = {
     "Tee": "Тройник",
     "Reducer": "Шилжилт",
     "Flange": "Фланец",
+    "CheckValve": "Буцах хавхлага",
 }
 
 FIELD_LABELS = {
@@ -71,6 +73,10 @@ FIELD_LABELS = {
     "bolt_circle": "Болтын тойрог",
     "bolt_hole": "Болтын нүх",
     "bolt_count": "Болтын тоо",
+    "face_to_face": "Бие даасан урт (A)",
+    "body_od": "Их биеийн гадна D (B)",
+    "bore": "Урсгалын нүх",
+    "eye": "Өргөх цагираг (1/0)",
 }
 
 # Нэг зэрэг зөвхөн нэг AutoCAD ажиллуулна — accoreconsole хүнд бөгөөд

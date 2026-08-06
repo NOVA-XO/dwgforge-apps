@@ -254,6 +254,75 @@ class Flange:
         b.subtract_since(m0, m1)
 
 
+@dataclass
+class CheckValve:
+    """Bray/Rite Series 210 маягийн wafer буцах хавхлага.
+
+    Бүх үндсэн хэмжээс нь Bray-гийн IOM гарын авлагын "THE RITE DIMENSIONS"
+    хүснэгтээс (Class 125/150) ирнэ — таамаглаагүй. Дотоод нүхийг хоолойн
+    хүснэгтээс авна: суудлын нүх нь шугамын дотоод диаметртэй тэнцүү гэж үзэв.
+
+    Загварт орсон зүйл: их бие, урсгалын нүх, оролтын хэлбэржүүлэлт, өргөх
+    цагираг. Дотоод хаалт, нугас, пүрш, суудлын хатуу давхарга ЭНД БАЙХГҮЙ —
+    Plant 3D-ийн эд ангид гадна хэлбэр ба нүх л чухал.
+    """
+
+    dn: int = 100
+    face_to_face: float | None = None  # None -> Bray хүснэгтээс
+    body_od: float | None = None  # None -> Bray хүснэгтээс
+    bore: float | None = None  # None -> хоолойн дотоод диаметр
+    eye: bool = True  # өргөх цагираг зурах эсэх
+
+    def name(self) -> str:
+        return f"CheckValve-DN{self.dn}"
+
+    def build(self, b: Build, t: Table) -> None:
+        row = t.chk(self.dn)
+        ff = self.face_to_face if self.face_to_face is not None else row[0]
+        od = self.body_od if self.body_od is not None else row[1]
+        top = row[2]  # тэнхлэгээс дээших нийт өндөр; 0 бол өгөгдөөгүй
+        bore = self.bore if self.bore is not None else t.id_(self.dn)
+
+        if bore >= od:
+            msg = f"DN{self.dn}: нүх ({bore}) их биеэс ({od}) том байж болохгүй"
+            raise ValueError(msg)
+
+        cx = ff / 2.0
+        rise = top - od / 2.0 if top > 0.0 else od * 0.32
+
+        # 1. Гадна: их бие + өргөх цагирагийн иш, цагираг
+        m0 = b.mark()
+        b.cyl((0.0, 0.0, 0.0), od / 2.0, (ff, 0.0, 0.0))
+
+        ring_ro = ring_t = ring_cz = 0.0
+        if self.eye and rise > 8.0:
+            ring_ro = rise * 0.26
+            ring_t = ring_ro * 0.60
+            ring_cz = od / 2.0 + rise - ring_ro
+            stem_r = max(4.0, rise * 0.11)
+            # Иш нь их бие рүү бага зэрэг оршино — нэгтгэхэд цоорхой үлдэхгүй.
+            b.cyl((cx, 0.0, od / 2.0 - 3.0), stem_r, (cx, 0.0, ring_cz))
+            # Цагирагийг Y тэнхлэгийн дагуух цилиндрээр хийнэ: эргүүлэх
+            # шаардлагагүй бөгөөд TORUS нь зөвхөн XY хавтгайд үүсдэг.
+            b.cyl((cx, -ring_t / 2.0, ring_cz), ring_ro, (cx, ring_t / 2.0, ring_cz))
+        b.union_since(m0)
+
+        # 2. Дотоод: урсгалын нүх, оролтын хэлбэржүүлэлт, цагирагийн нүх
+        m1 = b.mark()
+        b.cyl((-EPS, 0.0, 0.0), bore / 2.0, (ff + EPS, 0.0, 0.0))
+        # Оролт талд өргөсгөсөн конус — каталогийн "elliptical inlet shape
+        # designed to accelerate line media" гэсэн онцлогийн хялбаршуулалт.
+        inlet = min(bore * 1.16, od - 8.0)
+        b.cone((-EPS, 0.0, 0.0), inlet / 2.0, bore / 2.0, (ff * 0.34, 0.0, 0.0))
+        if ring_ro > 0.0:
+            b.cyl(
+                (cx, -ring_t / 2.0 - EPS, ring_cz),
+                ring_ro * 0.46,
+                (cx, ring_t / 2.0 + EPS, ring_cz),
+            )
+        b.subtract_since(m0, m1)
+
+
 # --------------------------------------------------------------------------
 # Ажиллуулагч
 # --------------------------------------------------------------------------

@@ -72,12 +72,45 @@ FLANGE_DEFAULT: dict[str, list[float]] = {
 }
 
 
+# Bray/Rite Series 210 wafer swing check valve, Class 125/150.
+# Эх сурвалж: Bray IOM гарын авлага "THE RITE DIMENSIONS", хуудас 31
+#   https://www.bray.com/docs/default-source/manuals-guides/iom-manuals/iom_rite.pdf
+#
+# DN -> [A, B, C, D]  бүгд мм
+#   A = face-to-face (хоёр фланецын хоорондох зузаан). "Face to face for Cast
+#       Iron Class 125" гэсэн тайлбар үүнийг тодорхой баталдаг.
+#   B = их биеийн гадна диаметр. Болтын тойргийн ДОТОР багтах ёстой (wafer
+#       хэлбэр), мөн Class 300-д томордог нь үүнийг баталж байна.
+#   C = хүснэгтэд байгаа ч зурган дээрх тэмдэглэгээ нь текстээс ялгагдахгүй.
+#       Тэнхлэгээс өргөх цагирагийн орой хүртэлх өндөр гэж ТААМАГЛАЖ байна
+#       (B/2-оос дээш 55-73 мм үлдэх нь эргүүлэгт тохирно). Загварт зөвхөн
+#       өргөх цагирагийн өндрийг тогтооход ашиглана.
+#   D = зориулалт нь тодорхойгүй. Хүснэгтэд хадгалсан, загварт ашиглаагүй.
+#
+# NPS 1" (DN25)-ээс доош энэ хавхлага үйлдвэрлэгддэггүй. DN32 (1 1/4") нь
+# Bray-гийн жагсаалтад байхгүй.
+CHECK_DEFAULT: dict[str, list[float]] = {
+    "25": [50.8, 86.3, 0.0, 0.0],
+    "40": [63.5, 104.7, 0.0, 0.0],
+    "50": [44.5, 104.8, 107.9, 30.1],
+    "65": [47.6, 123.8, 114.3, 34.9],
+    "80": [50.8, 136.5, 127.0, 41.2],
+    "100": [57.2, 174.6, 146.0, 69.8],
+    "125": [63.5, 196.9, 165.1, 92.0],
+    "150": [69.9, 222.3, 184.5, 114.3],
+    "200": [73.0, 279.4, 209.5, 146.0],
+    "250": [79.4, 339.7, 244.4, 190.5],
+    "300": [85.7, 409.6, 273.0, 222.2],
+}
+
+
 @dataclass
 class Table:
     """Ажиллах үеийн хэмжээсийн хүснэгт. hemjees.json-оос уншина."""
 
     dn: dict[str, list[float]] = field(default_factory=lambda: dict(DN_DEFAULT))
     flange: dict[str, list[float]] = field(default_factory=lambda: dict(FLANGE_DEFAULT))
+    check: dict[str, list[float]] = field(default_factory=lambda: dict(CHECK_DEFAULT))
 
     def od(self, dn: int) -> float:
         """Хоолойн гадна диаметр, мм."""
@@ -94,6 +127,10 @@ class Table:
     def fl(self, dn: int) -> list[float]:
         """Фланец: [гадна D, зузаан, болтын тойрог, нүхний D, болтын тоо]."""
         return self._row(self.flange, dn, "фланец")
+
+    def chk(self, dn: int) -> list[float]:
+        """Буцах хавхлага: [face-to-face, их биеийн гадна D, C, D] мм."""
+        return self._row(self.check, dn, "буцах хавхлага")
 
     @staticmethod
     def _row(src: dict[str, list[float]], dn: int, what: str) -> list[float]:
@@ -115,6 +152,7 @@ def load_table() -> Table:
                     "flange: [гадна_D, зузаан, болтын_тойрог, нүхний_D, болтын_тоо]",
                     "dn": DN_DEFAULT,
                     "flange": FLANGE_DEFAULT,
+                    "check": CHECK_DEFAULT,
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -123,7 +161,11 @@ def load_table() -> Table:
         )
         print(f"Хэмжээсийн файл үүслээ: {CONFIG.name}  (засаж болно)")
     raw = json.loads(CONFIG.read_text(encoding="utf-8"))
-    return Table(dn=raw.get("dn", DN_DEFAULT), flange=raw.get("flange", FLANGE_DEFAULT))
+    return Table(
+        dn=raw.get("dn", DN_DEFAULT),
+        flange=raw.get("flange", FLANGE_DEFAULT),
+        check=raw.get("check", CHECK_DEFAULT),
+    )
 
 
 # --------------------------------------------------------------------------

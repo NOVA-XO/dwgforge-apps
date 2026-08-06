@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from parts import Elbow, Flange, Pipe, Reducer, Tee, emit, run
+from parts import CheckValve, Elbow, Flange, Pipe, Reducer, Tee, emit, run
 from partsan import Table, load_table
 
 from dwgforge.backends import find_accoreconsole
@@ -35,6 +35,8 @@ BUILDERS: dict[str, object] = {
     "Tee": lambda dn, _t: [Tee(dn=dn)],
     "Reducer": lambda dn, t: _reducer(dn, t),
     "Flange": lambda dn, _t: [Flange(dn=dn)],
+    # Буцах хавхлага нь Bray-гийн хүснэгттэй DN-д л боломжтой.
+    "CheckValve": lambda dn, t: [CheckValve(dn=dn)] if str(dn) in t.check else [],
 }
 
 
