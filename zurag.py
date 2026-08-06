@@ -19,7 +19,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from dwgforge.backends import find_accoreconsole
 
-DRAIN = '(setq _d 0) (while (and (/= (getvar "CMDNAMES") "") (< _d 30)) (command "") (setq _d (1+ _d)))'
+DRAIN = (
+    '(setq _d 0) (while (and (/= (getvar "CMDNAMES") "") (< _d 30)) (command "") (setq _d (1+ _d)))'
+)
 
 # -VIEW-ийн танидаг нэрс.
 VIEWS = {
