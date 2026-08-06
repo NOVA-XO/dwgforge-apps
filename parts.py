@@ -19,6 +19,7 @@ r"""Эхний ээлжийн 5 эд анги: хоолой, тохой, тро�
 from __future__ import annotations
 
 import math
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,9 +43,33 @@ SEED = Path(__file__).parent / "seed" / "seed.dwg"
 # Энэ машин дээр тэр нь Civil 3D-ийн 916 KB загвар — ганц бие агуулсан файл
 # 930 KB болдгийн шалтгаан тэр. acadiso нь 31 KB тул үрлэг болгож ашиглана.
 # (.dwt-г /i-д өгвөл accoreconsole татгалздаг, гэхдээ .dwg нэртэй хуулбар ажиллана.)
-SEED_SOURCE = Path(
-    r"C:\Users\User\AppData\Local\Autodesk\C3D 2026\enu\Template\AutoCAD Template\acadiso.dwt"
+# acadiso.dwt-г хайх байрлалууд. Хэрэглэгчийн нэр, суулгасан бүтээгдэхүүн,
+# хувилбар бүрт өөр байдаг тул хатуу зам бичихгүй — эс тэгвээс өөр компьютер
+# дээр олдохгүй бөгөөд Civil 3D-ийн 916 KB загвар руу чимээгүй буцна.
+SEED_GLOBS = (
+    "Autodesk/*/enu/Template/AutoCAD Template/acadiso.dwt",
+    "Autodesk/*/enu/Template/acadiso.dwt",
+    "Autodesk/*/*/Template/acadiso.dwt",
+    "*/UserDataCache/Template/acadiso.dwt",
 )
+
+
+def find_seed_source() -> Path | None:
+    """Acadiso загварыг олно. Олдохгүй бол None — профайлын загвар руу буцна."""
+    roots = [
+        Path(os.environ.get("LOCALAPPDATA", "")),
+        Path(os.environ.get("APPDATA", "")),
+        Path(r"C:\Program Files\Autodesk"),
+    ]
+    for root in roots:
+        if not root or not root.is_dir():
+            continue
+        for pattern in SEED_GLOBS:
+            for hit in sorted(root.glob(pattern), reverse=True):
+                if hit.is_file():
+                    return hit
+    return None
+
 
 EPS = 0.5  # нүхийг үзүүрээс бага зэрэг цухуйлгана — цэвэр хайчилахын тулд
 
@@ -53,10 +78,11 @@ def ensure_seed() -> Path | None:
     """Үрлэг зургийг бэлдэнэ. Олдохгүй бол None — профайлын загвар руу буцна."""
     if SEED.is_file():
         return SEED
-    if not SEED_SOURCE.is_file():
+    src = find_seed_source()
+    if src is None:
         return None
     SEED.parent.mkdir(parents=True, exist_ok=True)
-    SEED.write_bytes(SEED_SOURCE.read_bytes())
+    SEED.write_bytes(src.read_bytes())
     return SEED
 
 

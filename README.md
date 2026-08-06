@@ -64,13 +64,14 @@ python -m venv .venv
 ### 3. Кодоос
 
 ```python
-import sys; sys.path.insert(0, "parts3d")
+import sys
+
+sys.path.insert(0, "parts3d")
 from pathlib import Path
 from parts import Elbow, emit, run
 from partsan import load_table
 
-run(emit([Elbow(dn=150, angle=45.0, bend_radius=300.0)], load_table()),
-    Path("tohoi.dwg"))
+run(emit([Elbow(dn=150, angle=45.0, bend_radius=300.0)], load_table()), Path("tohoi.dwg"))
 ```
 
 ## Хэмжээсийг засах — гурван түвшин
