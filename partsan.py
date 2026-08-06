@@ -131,7 +131,7 @@ class Table:
                 "өгөгдлийг энэ repo-д оруулаагүй (лицензийн шалтгаанаар). "
                 f"{LOCAL / 'bray_check.json'} файлыг үүсгэж "
                 '{"<DN>": [<face_to_face>, <body_od>, <C>, <D>], ...} '
-                "хэлбэрээр бичнэ үү (бүгд мм)."'
+                "хэлбэрээр бичнэ үү (бүгд мм)."
             )
             raise KeyError(msg)
         return self._row(self.check, dn, "буцах хавхлага")
