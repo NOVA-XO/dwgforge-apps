@@ -10,11 +10,11 @@ r"""Alfa Laval AlfaNova 400 / HP 400 — параметрт 3D загвар үү
 зурган дээрх аль элементэд харьяалагдах нь текстээс ялгагдахгүй байсан.
 
 Ажиллуулах:
-    cd C:\\Users\\User\\Python\\dwgforge
-    .\\.venv\\Scripts\\Activate.ps1
-    python "C:\\Users\\User\\OneDrive\\Desktop\\dwgforge-turshilt\\alfanova400.py"
+    cd <repo>
+    .\\.venv\\Scripts\\python.exe parts3d\\alfanova400.py
 """
 
+import json
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -28,23 +28,36 @@ EXE = Path(r"C:\Program Files\Autodesk\AutoCAD 2026\accoreconsole.exe")
 # ПАРАМЕТРҮҮД — засах бол зөвхөн энэ хэсгийг
 # --------------------------------------------------------------------------
 
-WIDTH = 390.0  # хуудас: 390 (15.35) — нийт өргөн
-BODY_H = 990.0  # хуудас: 990 (38.98) — их биеийн өндөр
-TOTAL_H = 1253.0  # хуудас: 1253 (49.33) — нийт өндөр (хөлтэйгээ)
-PORT_DX = 225.0  # хуудас: 225 (8.86)  — портын хэвтээ алслалт
-PORT_DZ = 825.0  # хуудас: 825 (32.48) — портын босоо алслалт
-FOOT_W_OUT = 466.0  # хуудас: 466 (18.34) — хөлний гадна өргөн
-FOOT_W_IN = 366.0  # хуудас: 366 (14.41) — хөлний дотор өргөн
-FOOT_D = 160.0  # хуудас: 160 (6.3)   — хөлний гүн
+# Хэмжээсийг `local/alfanova400.json`-оос уншина. Alfa Laval-ын хуудсанд
+# "No part of this document may be copied, re-produced or transmitted ...
+# without Alfa Laval's prior express written permission" гэсэн заалттай тул
+# тэдгээрийг энэ нээлттэй repo-д оруулаагүй. Файлын бүтцийг README-гээс үз.
+_LOCAL = HERE / "local" / "alfanova400.json"
+if not _LOCAL.is_file():
+    _MSG = (
+        f"{_LOCAL} олдсонгүй. AlfaNova 400-ийн хэмжээсийг үйлдвэрлэгчийн "
+        "хуудаснаас авч энэ файлд бичнэ үү (бүтцийг parts3d/README.md-ээс үз)."
+    )
+    raise SystemExit(_MSG)
+_D = json.loads(_LOCAL.read_text(encoding="utf-8"))
 
-FOOT_H = TOTAL_H - BODY_H  # = 263.0. Хуудсанд шууд байхгүй, хасаж гаргав.
-FOOT_PLATE_T = 20.0  # ? хуудсанд байхгүй — таамаг
-PORT_LEN = 60.0  # ? хуудсанд байхгүй — холбоосын урт, таамаг
+_B = _D["body"]
+WIDTH = _B["WIDTH"]
+BODY_H = _B["BODY_H"]
+TOTAL_H = _B["TOTAL_H"]
+PORT_DX = _B["PORT_DX"]
+PORT_DZ = _B["PORT_DZ"]
+FOOT_W_OUT = _B["FOOT_W_OUT"]
+FOOT_W_IN = _B["FOOT_W_IN"]
+FOOT_D = _B["FOOT_D"]
+DN = {int(k): v for k, v in _D["connections_od_mm"].items()}
 
-# ? Хуудсанд ашиглагдаагүй үлдсэн хэмжээсүүд: 242 (9.53), 200+A, 260+A.
-#   Эдгээр аль элементэд харьяалагдахыг тодруулах шаардлагатай.
+# Эдгээр нь каталогт БАЙХГҮЙ — хассан эсвэл таамагласан утга, тул кодод үлдэнэ.
+FOOT_H = TOTAL_H - BODY_H  # хуудсанд шууд байхгүй, 1253 - 990 гэж хасав
+FOOT_PLATE_T = 20.0  # ? хөлний ялтасны зузаан — таамаг
+PORT_LEN = 60.0  # ? холбоосын цухуйх урт — таамаг
 
-DN = {80: 88.9, 100: 114.3, 150: 168.3}  # DN -> гадна диаметр (мм), ISO хоолой
+# ? Хуудсанд ашиглагдаагүй үлдсэн хэмжээс: 242 (9.53), 200+A, 260+A.
 
 
 @dataclass(frozen=True)

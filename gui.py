@@ -7,9 +7,8 @@ r"""Локал вэб GUI — эд ангийн хэмжээсийг брауз�
 accoreconsole-ыг дуудна.
 
 Ажиллуулах:
-    cd C:\\Users\\User\\Python\\dwgforge
-    .\\.venv\\Scripts\\Activate.ps1
-    python "C:\\Users\\User\\OneDrive\\Desktop\\dwgforge-turshilt\\gui.py"
+    cd <repo>
+    .\\.venv\\Scripts\\python.exe parts3d\\gui.py
 
 Дараа нь браузер дээр:  http://localhost:8765
 """

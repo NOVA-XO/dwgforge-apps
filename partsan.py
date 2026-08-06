@@ -10,9 +10,8 @@ r"""Параметрт 3D эд ангийн сан — хоолой, тохой,
          Elbow(dn=150, angle=45, bend_radius=1.5)
 
 Ажиллуулах:
-    cd C:\\Users\\User\\Python\\dwgforge
-    .\\.venv\\Scripts\\Activate.ps1
-    python "C:\\Users\\User\\OneDrive\\Desktop\\dwgforge-turshilt\\partsan.py"
+    cd <repo>
+    .\\.venv\\Scripts\\python.exe parts3d\\partsan.py
 """
 
 from __future__ import annotations
@@ -72,36 +71,32 @@ FLANGE_DEFAULT: dict[str, list[float]] = {
 }
 
 
-# Bray/Rite Series 210 wafer swing check valve, Class 125/150.
-# Эх сурвалж: Bray IOM гарын авлага "THE RITE DIMENSIONS", хуудас 31
-#   https://www.bray.com/docs/default-source/manuals-guides/iom-manuals/iom_rite.pdf
+# ------------------------------------------------------------------------
+# Үйлдвэрлэгчийн каталогийн хэмжээс энэ repo-д ОРОХГҮЙ.
 #
-# DN -> [A, B, C, D]  бүгд мм
-#   A = face-to-face (хоёр фланецын хоорондох зузаан). "Face to face for Cast
-#       Iron Class 125" гэсэн тайлбар үүнийг тодорхой баталдаг.
-#   B = их биеийн гадна диаметр. Болтын тойргийн ДОТОР багтах ёстой (wafer
-#       хэлбэр), мөн Class 300-д томордог нь үүнийг баталж байна.
-#   C = хүснэгтэд байгаа ч зурган дээрх тэмдэглэгээ нь текстээс ялгагдахгүй.
-#       Тэнхлэгээс өргөх цагирагийн орой хүртэлх өндөр гэж ТААМАГЛАЖ байна
-#       (B/2-оос дээш 55-73 мм үлдэх нь эргүүлэгт тохирно). Загварт зөвхөн
-#       өргөх цагирагийн өндрийг тогтооход ашиглана.
-#   D = зориулалт нь тодорхойгүй. Хүснэгтэд хадгалсан, загварт ашиглаагүй.
+# Bray, Alfa Laval зэрэг компаниуд гарын авлагадаа "shall not be copied,
+# transferred, conveyed, or displayed ... without express written permission"
+# гэсэн заалттай. Код нь нээлттэй тул тэдгээрийн хүснэгтийг дахин нийтлэхгүй:
+# `parts3d/local/` хавтаснаас уншина, тэр хавтас нь gitignore хийгдсэн.
 #
-# NPS 1" (DN25)-ээс доош энэ хавхлага үйлдвэрлэгддэггүй. DN32 (1 1/4") нь
-# Bray-гийн жагсаалтад байхгүй.
-CHECK_DEFAULT: dict[str, list[float]] = {
-    "25": [50.8, 86.3, 0.0, 0.0],
-    "40": [63.5, 104.7, 0.0, 0.0],
-    "50": [44.5, 104.8, 107.9, 30.1],
-    "65": [47.6, 123.8, 114.3, 34.9],
-    "80": [50.8, 136.5, 127.0, 41.2],
-    "100": [57.2, 174.6, 146.0, 69.8],
-    "125": [63.5, 196.9, 165.1, 92.0],
-    "150": [69.9, 222.3, 184.5, 114.3],
-    "200": [73.0, 279.4, 209.5, 146.0],
-    "250": [79.4, 339.7, 244.4, 190.5],
-    "300": [85.7, 409.6, 273.0, 222.2],
-}
+# Өөрийн өгөгдлөө оруулах: `parts3d/local/bray_check.json` файлыг үүсгээд
+#   { "100": [face_to_face, body_od, C, D], ... }   бүгд мм
+# гэсэн бүтэцтэй бичнэ. Эх сурвалж нь тухайн үйлдвэрлэгчийн гарын авлага.
+# Файл байхгүй бол буцах хавхлагын эд анги тодорхой алдаа өгнө.
+# ------------------------------------------------------------------------
+LOCAL = HERE / "local"
+
+
+def load_local(name: str) -> dict[str, list[float]]:
+    """`local/<name>.json`-оос хэмжээс уншина. Байхгүй бол хоосон буцаана."""
+    f = LOCAL / f"{name}.json"
+    if not f.is_file():
+        return {}
+    raw = json.loads(f.read_text(encoding="utf-8"))
+    return {k: [float(x) for x in v] for k, v in raw.items() if not k.startswith("_")}
+
+
+CHECK_DEFAULT: dict[str, list[float]] = load_local("bray_check")
 
 
 @dataclass
@@ -130,6 +125,15 @@ class Table:
 
     def chk(self, dn: int) -> list[float]:
         """Буцах хавхлага: [face-to-face, их биеийн гадна D, C, D] мм."""
+        if not self.check:
+            msg = (
+                "Буцах хавхлагын хэмжээсийн хүснэгт хоосон байна. Үйлдвэрлэгчийн "
+                "өгөгдлийг энэ repo-д оруулаагүй (лицензийн шалтгаанаар). "
+                f"{LOCAL / 'bray_check.json'} файлыг үүсгэж "
+                '{"<DN>": [<face_to_face>, <body_od>, <C>, <D>], ...} '
+                "хэлбэрээр бичнэ үү (бүгд мм)."'
+            )
+            raise KeyError(msg)
         return self._row(self.check, dn, "буцах хавхлага")
 
     @staticmethod

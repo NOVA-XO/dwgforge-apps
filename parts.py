@@ -11,9 +11,8 @@ r"""Эхний ээлжийн 5 эд анги: хоолой, тохой, тро�
          Tee(dn=100, branch_dn=50)
 
 Ажиллуулах:
-    cd C:\\Users\\User\\Python\\dwgforge
-    .\\.venv\\Scripts\\Activate.ps1
-    python "C:\\Users\\User\\OneDrive\\Desktop\\dwgforge-turshilt\\parts.py"
+    cd <repo>
+    .\\.venv\\Scripts\\python.exe parts3d\\parts.py
 """
 
 from __future__ import annotations
