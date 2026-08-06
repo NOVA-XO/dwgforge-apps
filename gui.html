@@ -68,6 +68,29 @@
   td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--dim); }
   .path { font-family: Consolas, monospace; font-size: 12px; color: var(--dim);
           word-break: break-all; margin-top: 14px; }
+
+  .shot {
+    border: 1px solid var(--line); border-radius: 10px; background: #fff;
+    aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center;
+    overflow: hidden; margin-bottom: 10px; position: relative;
+  }
+  .shot img { width: 100%; height: 100%; object-fit: contain; }
+  .shot .ph { color: #8b93a2; font-size: 14px; text-align: center; padding: 20px; }
+  .shot.busy::after {
+    content: "AutoCAD зурж байна..."; position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,.88); color: #333; font-size: 14px;
+  }
+  .views { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 18px; }
+  .views button {
+    padding: 5px 11px; font-size: 13px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--panel); color: var(--dim);
+  }
+  .views button:hover { color: var(--ink); }
+  .views button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { color: var(--accent); }
+  tbody tr.on td { color: var(--accent); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -85,6 +108,10 @@
   </section>
 
   <section class="pane">
+    <h2>3D харагдац</h2>
+    <div class="shot" id="shot"><div class="ph">Эд анги үүсгэвэл энд харагдана</div></div>
+    <div class="views" id="views"></div>
+
     <h2>Үүсгэсэн эд ангиуд</h2>
     <table>
       <thead><tr><th>Нэр</th><th class="num">Хэмжээ</th></tr></thead>
@@ -96,6 +123,10 @@
 
 <script>
 let SCHEMA = null, DN = [], current = null;
+let shown = null;
+let viewNow = 'swiso';
+const VIEW_LABELS = { swiso: 'Изометр', seiso: 'Изометр 2', top: 'Дээрээс',
+                      front: 'Урдаас', right: 'Тэнхлэгийн дагуу' };
 
 const $ = (id) => document.getElementById(id);
 
@@ -115,8 +146,40 @@ async function boot() {
     b.dataset.key = p.key;
     $('tabs').appendChild(b);
   });
+  const vd = await (await fetch('/api/views')).json();
+  $('views').innerHTML = '';
+  vd.views.filter(v => VIEW_LABELS[v]).forEach(v => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = VIEW_LABELS[v];
+    b.dataset.view = v;
+    b.className = v === viewNow ? 'on' : '';
+    b.onclick = () => { viewNow = v; paintViews(); if (shown) showShot(shown); };
+    $('views').appendChild(b);
+  });
+
   select(SCHEMA[0].key);
   refresh();
+}
+
+function paintViews() {
+  document.querySelectorAll('.views button')
+    .forEach(b => b.classList.toggle('on', b.dataset.view === viewNow));
+}
+
+async function showShot(name) {
+  shown = name;
+  const box = $('shot');
+  box.classList.add('busy');
+  const img = new Image();
+  // Зургийг AutoCAD гаргана — эхний удаад хэдэн секунд авна, дараа нь кэшлэгдэнэ.
+  img.onload = () => { box.classList.remove('busy'); box.innerHTML = ''; box.appendChild(img); };
+  img.onerror = () => {
+    box.classList.remove('busy');
+    box.innerHTML = '<div class="ph">зураг гаргаж чадсангүй</div>';
+  };
+  img.src = '/api/preview?name=' + encodeURIComponent(name) +
+            '&view=' + viewNow + '&t=' + Date.now();
 }
 
 function select(key) {
@@ -185,6 +248,7 @@ async function build() {
         '✓ ' + d.name + '\n' +
         (d.size / 1024).toFixed(1) + ' KB · ' + d.seconds + ' сек\n' + d.path;
       refresh();
+      showShot(d.name);
     } else {
       $('msg').className = 'msg err';
       $('msg').textContent = '✗ ' + (d.error || 'тодорхойгүй алдаа');
@@ -213,6 +277,12 @@ async function refresh() {
     const b = document.createElement('td'); b.className = 'num';
     b.textContent = (p.size / 1024).toFixed(1) + ' KB';
     tr.append(a, b);
+    tr.classList.toggle('on', p.name === shown);
+    tr.onclick = () => {
+      document.querySelectorAll('#list tr').forEach(r => r.classList.remove('on'));
+      tr.classList.add('on');
+      showShot(p.name);
+    };
     tb.appendChild(tr);
   });
 }

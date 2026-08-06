@@ -22,6 +22,7 @@ import sys
 import threading
 import time
 import traceback
+import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -32,9 +33,11 @@ sys.path.insert(0, str(HERE))
 
 from parts import CheckValve, Elbow, Flange, Pipe, Reducer, Tee, emit, run  # noqa: E402
 from partsan import load_table  # noqa: E402
+from zurag import VIEWS, render  # noqa: E402
 
 PORT = 8765
 OUTDIR = HERE / "parts"
+PREVIEW = OUTDIR / ".preview"
 
 # Формд гарах эд ангиуд. Шинэ эд анги нэмэхэд энд нэг мөр л нэмнэ —
 # талбаруудыг нь dataclass-аас автоматаар уншина.
@@ -77,6 +80,8 @@ FIELD_LABELS = {
     "body_od": "Их биеийн гадна D (B)",
     "bore": "Урсгалын нүх",
     "eye": "Өргөх цагираг (1/0)",
+    "open_angle": "Нээлтийн өнцөг (0 = хаалттай)",
+    "detail": "Гадна нарийн ширийн (1/0)",
 }
 
 # Нэг зэрэг зөвхөн нэг AutoCAD ажиллуулна — accoreconsole хүнд бөгөөд
@@ -142,6 +147,10 @@ def build_part(kind: str, params: dict[str, Any]) -> dict[str, Any]:
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
     secs = time.monotonic() - started
 
+    # Дахин барихад хуучин зураг хуучирсан тул устгана.
+    for stale in PREVIEW.glob(f"{part.name()}-*.png"):
+        stale.unlink(missing_ok=True)
+
     if not ok or not out.is_file():
         return {"ok": False, "error": "AutoCAD үүсгэж чадсангүй — консолын гаралтыг харна уу"}
     return {
@@ -200,8 +209,35 @@ class Handler(BaseHTTPRequestHandler):
             )
         elif self.path == "/api/parts":
             self._json({"parts": list_parts()})
+        elif self.path.startswith("/api/preview"):
+            self._preview()
+        elif self.path == "/api/views":
+            self._json({"views": list(VIEWS)})
         else:
             self._json({"error": "not found"}, 404)
+
+    def _preview(self) -> None:
+        """PNG урьдчилсан харагдац. Байхгүй бол AutoCAD-аар нэг удаа гаргана."""
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        name = (q.get("name") or [""])[0]
+        view = (q.get("view") or ["swiso"])[0]
+        # Нэрийг цэвэрлэнэ: замын тэмдэгт орвол хавтаснаас гарах эрсдэлтэй.
+        bad = not name or "/" in name or chr(92) in name or ".." in name
+        if bad or view not in VIEWS:
+            self._json({"error": "bad request"}, 400)
+            return
+        dwg = OUTDIR / f"{name}.dwg"
+        if not dwg.is_file():
+            self._json({"error": "no such part"}, 404)
+            return
+        png = PREVIEW / f"{name}-{view}.png"
+        if not png.is_file():
+            # AutoCAD хүнд тул нэг зэрэг нэг л ажиллуулна.
+            with BUILD_LOCK:
+                if not png.is_file() and render(dwg, png, view=view) is None:
+                    self._json({"error": "render failed"}, 500)
+                    return
+        self._send(200, png.read_bytes(), "image/png")
 
     def do_POST(self) -> None:
         """POST /api/build: эд анги үүсгэнэ."""
