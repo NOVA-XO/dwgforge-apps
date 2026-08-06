@@ -30,11 +30,11 @@ DEFAULT_DN = (50, 80, 100, 150)
 
 # Тухайн DN-д ямар эд ангиуд үүсгэх вэ. Шинэ хувилбар нэмэхэд энд нэмнэ.
 BUILDERS: dict[str, object] = {
-    "Pipe": lambda dn, t: [Pipe(dn=dn, length=500.0)],
-    "Elbow": lambda dn, t: [Elbow(dn=dn, angle=90.0), Elbow(dn=dn, angle=45.0)],
-    "Tee": lambda dn, t: [Tee(dn=dn)],
+    "Pipe": lambda dn, _t: [Pipe(dn=dn, length=500.0)],
+    "Elbow": lambda dn, _t: [Elbow(dn=dn, angle=90.0), Elbow(dn=dn, angle=45.0)],
+    "Tee": lambda dn, _t: [Tee(dn=dn)],
     "Reducer": lambda dn, t: _reducer(dn, t),
-    "Flange": lambda dn, t: [Flange(dn=dn)],
+    "Flange": lambda dn, _t: [Flange(dn=dn)],
 }
 
 
