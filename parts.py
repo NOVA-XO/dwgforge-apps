@@ -256,25 +256,31 @@ class Flange:
 
 @dataclass
 class CheckValve:
-    """Bray/Rite Series 210 маягийн wafer буцах хавхлага.
+    """Bray/Rite Series 210 маягийн wafer буцах хавхлага, нээгддэг хаалттай.
 
     Бүх үндсэн хэмжээс нь Bray-гийн IOM гарын авлагын "THE RITE DIMENSIONS"
     хүснэгтээс (Class 125/150) ирнэ — таамаглаагүй. Дотоод нүхийг хоолойн
     хүснэгтээс авна: суудлын нүх нь шугамын дотоод диаметртэй тэнцүү гэж үзэв.
 
-    Загварт орсон зүйл: их бие, урсгалын нүх, оролтын хэлбэржүүлэлт, өргөх
-    цагираг. Дотоод хаалт, нугас, пүрш, суудлын хатуу давхарга ЭНД БАЙХГҮЙ —
-    Plant 3D-ийн эд ангид гадна хэлбэр ба нүх л чухал.
+    `open_angle` нь хаалтын байрлалыг заана: 0 = хаалттай, 70-80 = бүрэн
+    нээлттэй. Хаалт нь их биетэй НЭГТГЭГДЭХГҮЙ — хөдөлдөг эд анги тул тусдаа
+    бие хэвээр үлдэнэ. Тиймээс энэ эд анги 2 биетэй гарна.
+
+    Гадна талын нарийн ширийн: өргөх цагираг, нэрийн хавтангийн товгор,
+    нугасны тэнхлэгийн бөглөө, гаралтын ирмэгийн ховил.
     """
 
     dn: int = 100
+    open_angle: float = 0.0  # 0 = хаалттай, 70-80 = бүрэн нээлттэй
     face_to_face: float | None = None  # None -> Bray хүснэгтээс
     body_od: float | None = None  # None -> Bray хүснэгтээс
     bore: float | None = None  # None -> хоолойн дотоод диаметр
-    eye: bool = True  # өргөх цагираг зурах эсэх
+    eye: bool = True  # өргөх цагираг
+    detail: bool = True  # нэрийн хавтан, бөглөө, ирмэгийн ховил
 
     def name(self) -> str:
-        return f"CheckValve-DN{self.dn}"
+        tag = "closed" if self.open_angle <= 0.5 else f"open{self.open_angle:.0f}"
+        return f"CheckValve-DN{self.dn}-{tag}"
 
     def build(self, b: Build, t: Table) -> None:
         row = t.chk(self.dn)
@@ -289,8 +295,9 @@ class CheckValve:
 
         cx = ff / 2.0
         rise = top - od / 2.0 if top > 0.0 else od * 0.32
+        seat_x = ff * 0.46  # суудлын хавтгай — оролтын хэлбэржүүлэлтийн ард
 
-        # 1. Гадна: их бие + өргөх цагирагийн иш, цагираг
+        # ---- 1. Гадна бие ------------------------------------------------
         m0 = b.mark()
         b.cyl((0.0, 0.0, 0.0), od / 2.0, (ff, 0.0, 0.0))
 
@@ -300,20 +307,45 @@ class CheckValve:
             ring_t = ring_ro * 0.60
             ring_cz = od / 2.0 + rise - ring_ro
             stem_r = max(4.0, rise * 0.11)
-            # Иш нь их бие рүү бага зэрэг оршино — нэгтгэхэд цоорхой үлдэхгүй.
             b.cyl((cx, 0.0, od / 2.0 - 3.0), stem_r, (cx, 0.0, ring_cz))
-            # Цагирагийг Y тэнхлэгийн дагуух цилиндрээр хийнэ: эргүүлэх
-            # шаардлагагүй бөгөөд TORUS нь зөвхөн XY хавтгайд үүсдэг.
+            # Цагирагийг Y тэнхлэгийн дагуух цилиндрээр хийнэ: TORUS зөвхөн XY
+            # хавтгайд үүсдэг тул эргүүлэх шаардлагагүй арга нь энэ.
             b.cyl((cx, -ring_t / 2.0, ring_cz), ring_ro, (cx, ring_t / 2.0, ring_cz))
+
+        hinge_z = bore / 2.0 + max(3.0, bore * 0.035)
+        if self.detail:
+            # Нэрийн хавтангийн товгор — +Y тал дээр, каталогийн зурган дээрх
+            # цутгамал хавтангийн байрлал.
+            pad_h = od * 0.20
+            pad_y = math.sqrt(max((od / 2.0) ** 2 - (pad_h / 2.0) ** 2, 1.0))
+            b.box(ff * 0.24, pad_y - 4.0, -pad_h / 2.0, ff * 0.52, 7.0, pad_h)
+            # Нугасны тэнхлэгийн бөглөө — хоёр талд, Y тэнхлэгийн дагуу.
+            plug_y = math.sqrt(max((od / 2.0) ** 2 - hinge_z**2, 1.0))
+            plug_r = max(5.0, bore * 0.055)
+            for sgn in (-1.0, 1.0):
+                b.cyl(
+                    (seat_x, sgn * (plug_y - 6.0), hinge_z),
+                    plug_r,
+                    (seat_x, sgn * (plug_y + 3.0), hinge_z),
+                )
         b.union_since(m0)
 
-        # 2. Дотоод: урсгалын нүх, оролтын хэлбэржүүлэлт, цагирагийн нүх
+        # ---- 2. Дотоод: нүх, оролтын хэлбэржүүлэлт, ирмэгийн ховил -------
         m1 = b.mark()
         b.cyl((-EPS, 0.0, 0.0), bore / 2.0, (ff + EPS, 0.0, 0.0))
-        # Оролт талд өргөсгөсөн конус — каталогийн "elliptical inlet shape
-        # designed to accelerate line media" гэсэн онцлогийн хялбаршуулалт.
+        # Каталогийн "elliptical inlet shape designed to accelerate line media"
+        # гэсэн онцлогийн хялбаршуулалт.
         inlet = min(bore * 1.16, od - 8.0)
-        b.cone((-EPS, 0.0, 0.0), inlet / 2.0, bore / 2.0, (ff * 0.34, 0.0, 0.0))
+        b.cone((-EPS, 0.0, 0.0), inlet / 2.0, bore / 2.0, (seat_x * 0.75, 0.0, 0.0))
+        if self.detail:
+            # Гаралтын ирмэгийн ховил.
+            ch = max(2.0, bore * 0.03)
+            b.cone(
+                (ff - ch, 0.0, 0.0),
+                bore / 2.0,
+                bore / 2.0 + ch,
+                (ff + EPS, 0.0, 0.0),
+            )
         if ring_ro > 0.0:
             b.cyl(
                 (cx, -ring_t / 2.0 - EPS, ring_cz),
@@ -321,6 +353,61 @@ class CheckValve:
                 (cx, ring_t / 2.0 + EPS, ring_cz),
             )
         b.subtract_since(m0, m1)
+
+        # ---- 3. Хаалт — тусдаа бие, нугасны эргэн тойронд эргүүлнэ --------
+        #
+        # Нугас нь хаалтын ДЭЭД ИРМЭГ дээр байрлана (хөшүүрэг биш) — swing
+        # check-ийн бодит бүтэц. Y тэнхлэгийн эргэн тойронд -th өнцгөөр
+        # эргүүлнэ: (x, z) -> (x*cos - z*sin, x*sin + z*cos), ингэснээр хаалт
+        # урсгалын дагуу дээшээ нээгдэнэ.
+        disc_r = bore / 2.0 * 0.97
+        disc_t = max(4.0, bore * 0.06)
+        th = math.radians(self.open_angle)
+        cos_t, sin_t = math.cos(th), math.sin(th)
+
+        hx, hz = seat_x, disc_r  # нугас: хаалттай үеийн дээд ирмэг
+        dx = hx + disc_r * sin_t
+        dz = hz - disc_r * cos_t
+        nx, nz = cos_t, sin_t  # хаалтын нормаль
+
+        m2 = b.mark()
+        b.cyl(
+            (dx - nx * disc_t / 2.0, 0.0, dz - nz * disc_t / 2.0),
+            disc_r,
+            (dx + nx * disc_t / 2.0, 0.0, dz + nz * disc_t / 2.0),
+        )
+        _ = m2  # хаалт нь их биетэй нэгтгэгдэхгүй — хөдөлдөг эд анги
+
+        # Хавтгай дугуй хаалт богино wafer биед бүрэн нээгдэж ЧАДАХГҮЙ. Bray
+        # өөрөө "disc have been shape optimized to achieve a fully open
+        # position" гэж бичсэн — жинхэнэ хаалт нь дугуй биш. Бидэнд түүний
+        # хэлбэр байхгүй тул хязгаараас хэтэрвэл дуугүй өнгөрөхгүй, хэлнэ.
+        reach = dx + disc_t / 2.0 * abs(nx) + disc_r * math.sqrt(max(1.0 - nx * nx, 0.0))
+        if reach > ff + 0.5:
+            b.note(
+                f"  ЗАНАЛХИЙЛЭЛ: {self.open_angle:.0f} градуст хаалт x={reach:.0f} "
+                f"хүрч, их бие {ff:.0f}-д дуусна — схемийн шинжтэй"
+            )
+        else:
+            b.note(f"  хаалт {self.open_angle:.0f} град, x={reach:.0f} <= {ff:.0f}")
+
+    def max_fitting_angle(self, t: Table) -> float:
+        """Хаалт их биед багтах хамгийн их нээлтийн өнцөг, градусаар."""
+        row = t.chk(self.dn)
+        ff = self.face_to_face if self.face_to_face is not None else row[0]
+        bore = self.bore if self.bore is not None else t.id_(self.dn)
+        disc_r = bore / 2.0 * 0.97
+        disc_t = max(4.0, bore * 0.06)
+        seat_x = ff * 0.46
+        best = 0.0
+        for deg in range(0, 91):
+            th = math.radians(deg)
+            nx = math.cos(th)
+            dx = seat_x + disc_r * math.sin(th)
+            reach = dx + disc_t / 2.0 * abs(nx) + disc_r * math.sqrt(max(1.0 - nx * nx, 0.0))
+            if reach <= ff + 0.5:
+                best = float(deg)
+        return best
 
 
 # --------------------------------------------------------------------------
