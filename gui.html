@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dwgforge — эд ангийн үүсгэгч</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --line: #262b36; --ink: #e6e8ee;
+    --dim: #9aa3b2; --accent: #4c8dff; --ok: #3ecf8e; --err: #ff6b6b;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f4f6fa; --panel: #ffffff; --line: #dfe4ec; --ink: #1a1f2b;
+      --dim: #67707f; --accent: #2563eb; --ok: #0f9d58; --err: #d93025;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 "Segoe UI", system-ui, sans-serif;
+  }
+  header {
+    padding: 18px 24px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  }
+  header h1 { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: -.01em; }
+  header .sub { color: var(--dim); font-size: 13px; }
+  main { display: grid; grid-template-columns: minmax(340px, 420px) 1fr; gap: 0; min-height: calc(100vh - 62px); }
+  @media (max-width: 820px) { main { grid-template-columns: 1fr; } }
+  .pane { padding: 22px 24px; }
+  .pane + .pane { border-left: 1px solid var(--line); }
+  @media (max-width: 820px) { .pane + .pane { border-left: 0; border-top: 1px solid var(--line); } }
+
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px; }
+  .tab {
+    padding: 7px 14px; border: 1px solid var(--line); background: var(--panel);
+    color: var(--dim); border-radius: 7px; cursor: pointer; font-size: 14px;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+
+  .field { margin-bottom: 13px; }
+  .field label { display: block; font-size: 13px; color: var(--dim); margin-bottom: 4px; }
+  .field input, .field select {
+    width: 100%; padding: 8px 10px; border-radius: 7px; font-size: 15px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  }
+  .field input:focus, .field select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .field .hint { font-size: 12px; color: var(--dim); margin-top: 3px; }
+
+  button.go {
+    width: 100%; margin-top: 8px; padding: 12px; font-size: 15px; font-weight: 650;
+    background: var(--accent); color: #fff; border: 0; border-radius: 8px; cursor: pointer;
+  }
+  button.go:disabled { opacity: .55; cursor: progress; }
+
+  .msg { margin-top: 16px; padding: 12px 14px; border-radius: 8px; font-size: 14px;
+         border: 1px solid var(--line); background: var(--panel); white-space: pre-wrap; }
+  .msg.ok { border-color: var(--ok); }
+  .msg.err { border-color: var(--err); color: var(--err); }
+
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .06em;
+       color: var(--dim); margin: 0 0 12px; font-weight: 650; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--dim); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--dim); }
+  .path { font-family: Consolas, monospace; font-size: 12px; color: var(--dim);
+          word-break: break-all; margin-top: 14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>dwgforge</h1>
+  <span class="sub">Параметрт 3D эд ангийн үүсгэгч · AutoCAD 2026</span>
+</header>
+
+<main>
+  <section class="pane">
+    <div class="tabs" id="tabs"></div>
+    <form id="form" autocomplete="off"></form>
+    <button class="go" id="go">Үүсгэх</button>
+    <div id="msg"></div>
+  </section>
+
+  <section class="pane">
+    <h2>Үүсгэсэн эд ангиуд</h2>
+    <table>
+      <thead><tr><th>Нэр</th><th class="num">Хэмжээ</th></tr></thead>
+      <tbody id="list"><tr><td colspan="2" style="color:var(--dim)">ачаалж байна…</td></tr></tbody>
+    </table>
+    <div class="path" id="outdir"></div>
+  </section>
+</main>
+
+<script>
+let SCHEMA = null, DN = [], current = null;
+
+const $ = (id) => document.getElementById(id);
+
+async function boot() {
+  const r = await fetch('/api/schema');
+  const d = await r.json();
+  SCHEMA = d.parts; DN = d.dn;
+  $('outdir').textContent = 'Гаралт: ' + d.outdir;
+
+  $('tabs').innerHTML = '';
+  SCHEMA.forEach((p, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tab' + (i === 0 ? ' on' : '');
+    b.textContent = p.label;
+    b.onclick = () => select(p.key);
+    b.dataset.key = p.key;
+    $('tabs').appendChild(b);
+  });
+  select(SCHEMA[0].key);
+  refresh();
+}
+
+function select(key) {
+  current = SCHEMA.find(p => p.key === key);
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.key === key));
+
+  $('form').innerHTML = '';
+  current.fields.forEach(f => {
+    const wrap = document.createElement('div');
+    wrap.className = 'field';
+
+    const lab = document.createElement('label');
+    lab.textContent = f.label + (f.optional ? '' : ' *');
+    lab.htmlFor = 'f_' + f.name;
+    wrap.appendChild(lab);
+
+    let el;
+    // DN талбарууд нь хүснэгтээс ирсэн жагсаалтаас сонгоно — гараар бичвэл
+    // хүснэгтэд байхгүй утга оруулж алдаа гаргах магадлалтай.
+    if (f.name === 'dn' || f.name === 'dn_small' || f.name === 'branch_dn') {
+      el = document.createElement('select');
+      if (f.optional) el.appendChild(new Option('(гол шугамтай ижил)', ''));
+      DN.forEach(v => el.appendChild(new Option('DN' + v, v)));
+      if (f.default != null) el.value = f.default;
+    } else {
+      el = document.createElement('input');
+      el.type = 'number';
+      el.step = 'any';
+      if (f.default != null) el.value = f.default;
+      if (f.optional) el.placeholder = 'автомат (хүснэгтээс)';
+    }
+    el.id = 'f_' + f.name;
+    el.name = f.name;
+    wrap.appendChild(el);
+
+    if (f.optional) {
+      const h = document.createElement('div');
+      h.className = 'hint';
+      h.textContent = 'хоосон орхивол hemjees.json-оос авна';
+      wrap.appendChild(h);
+    }
+    $('form').appendChild(wrap);
+  });
+  $('msg').innerHTML = '';
+}
+
+async function build() {
+  const params = {};
+  new FormData($('form')).forEach((v, k) => { params[k] = v; });
+
+  $('go').disabled = true;
+  $('go').textContent = 'AutoCAD ажиллаж байна…';
+  $('msg').className = 'msg';
+  $('msg').textContent = 'Хүлээнэ үү — ихэвчлэн 3–8 секунд.';
+
+  try {
+    const r = await fetch('/api/build', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: current.key, params })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      $('msg').className = 'msg ok';
+      $('msg').textContent =
+        '✓ ' + d.name + '\n' +
+        (d.size / 1024).toFixed(1) + ' KB · ' + d.seconds + ' сек\n' + d.path;
+      refresh();
+    } else {
+      $('msg').className = 'msg err';
+      $('msg').textContent = '✗ ' + (d.error || 'тодорхойгүй алдаа');
+    }
+  } catch (e) {
+    $('msg').className = 'msg err';
+    $('msg').textContent = '✗ сервертэй холбогдож чадсангүй: ' + e;
+  } finally {
+    $('go').disabled = false;
+    $('go').textContent = 'Үүсгэх';
+  }
+}
+
+async function refresh() {
+  const r = await fetch('/api/parts');
+  const d = await r.json();
+  const tb = $('list');
+  tb.innerHTML = '';
+  if (!d.parts.length) {
+    tb.innerHTML = '<tr><td colspan="2" style="color:var(--dim)">хоосон</td></tr>';
+    return;
+  }
+  d.parts.forEach(p => {
+    const tr = document.createElement('tr');
+    const a = document.createElement('td'); a.textContent = p.name;
+    const b = document.createElement('td'); b.className = 'num';
+    b.textContent = (p.size / 1024).toFixed(1) + ' KB';
+    tr.append(a, b);
+    tb.appendChild(tr);
+  });
+}
+
+$('go').onclick = build;
+boot();
+</script>
+</body>
+</html>
