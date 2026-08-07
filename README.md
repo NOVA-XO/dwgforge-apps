@@ -1,185 +1,66 @@
-# parts3d — параметрт 3D эд ангийн сан
+# dwgforge-apps
 
-`dwgforge` дээр баригдсан хэрэглээний сан. Хоолойн эд ангийг **параметрээр**
-3D solid болгож үүсгэж, DWG болгож хадгална. Локал вэб GUI дагалдана.
+AutoCAD-тай ажилладаг хэрэглээний програмууд. Бүгд [`dwgforge`](https://github.com/NOVA-XO/dwgforge)
+сан дээр баригдана — сан нь Python-оос AutoLISP үүсгэж, `accoreconsole.exe`-ээр
+жинхэнэ DWG болгож гүйцэтгэдэг.
 
-> **Parametric 3D piping parts, built on `dwgforge`.** Generates real AutoCAD
-> 3D solids (not surfaces) with a working bore, and ships a dependency-free
-> local web GUI. English notes at the bottom.
+> **Applications built on `dwgforge`.** The library is a separate repository and
+> a separate release; this one holds the programs that use it.
 
----
+## Аппууд
 
-## Юу үүсгэдэг вэ
-
-| Эд анги | Параметрүүд |
+| Хавтас | Юу хийдэг |
 |---|---|
-| **Хоолой** `Pipe` | `dn`, `length`, `od`, `wall` |
-| **Тохой** `Elbow` | `dn`, `angle`, `bend_radius`, `od`, `wall` |
-| **Тройник** `Tee` | `dn`, `branch_dn`, `run_length`, `branch_length` |
-| **Шилжилт** `Reducer` | `dn`, `dn_small`, `length` |
-| **Фланец** `Flange` | `dn`, `hub_length`, `outer`, `thickness`, `bolt_circle`, `bolt_hole`, `bolt_count` |
-
-Бүгд **дотоод нүхтэй** — эзэлхүүнээр шалгагдсан. DN100 хоолой бүтэн цилиндрээс
-5 дахин хөнгөн байх ёстой, тэгж байгааг `parts_shalgah.py` баталдаг.
+| [`parts3d/`](parts3d/) | Параметрт 3D хоолойн эд анги (хоолой, тохой, тройник, шилжилт, фланец, буцах хавхлага) + Blender маягийн 3D харагдацтай локал вэб GUI |
 
 ## Шаардлага
 
-- **AutoCAD 2026 эсвэл Civil 3D 2026** — `accoreconsole.exe` түүнтэй хамт ирдэг.
-  Үүнгүйгээр ажиллахгүй.
-- Python 3.12
-- `dwgforge` (энэ repo)
+- **AutoCAD 2026 эсвэл Civil 3D 2026** — `accoreconsole.exe` түүнтэй хамт ирдэг
+- Python 3.12+
 
 ## Суулгах
 
 ```powershell
-git clone https://github.com/NOVA-XO/dwgforge.git
-cd dwgforge
+git clone https://github.com/NOVA-XO/dwgforge-apps.git
+cd dwgforge-apps
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-.\.venv\Scripts\python.exe -m dwgforge doctor     # AutoCAD олдож байгаа эсэх
 ```
 
-## Ашиглах
-
-### 1. GUI (хамгийн хялбар)
+Сангийн хараахан гараагүй өөрчлөлт дээр ажиллах бол сангаа дарж бичнэ:
 
 ```powershell
-.\.venv\Scripts\python.exe parts3d\gui.py
+.\.venv\Scripts\python.exe -m pip install -e ..\dwgforge
 ```
 
-Браузер `http://localhost:8765` дээр нээгдэнэ. Эд ангийн таб сонгож, хэмжээсээ
-оруулаад **Үүсгэх**. 3–8 секундэд DWG гарна.
+Шалгах: `.\.venv\Scripts\python.exe -m dwgforge doctor` — AutoCAD олдож байгаа эсэх.
 
-Сервер нь зөвхөн `127.0.0.1`-ийг сонсоно — сүлжээнд нээлттэй биш, нэвтрэлт
-байхгүй. Хуваалцах бол урьдаар токен нэмэх хэрэгтэй.
+## Шинэ апп хэрхэн эхлүүлэх вэ
 
-#### 3D харагдац — Blender маягийн интерактив харагдац
-
-Баруун тал нь зураг биш, **жинхэнэ 3D харагдац**: солидыг AutoCAD-ын `STLOUT`
-меш болгож гаргаад (`mesh.py`) хөтөч дээр WebGL-ээр зурна (`viewport.js`).
-Гуравдагч этгээдийн сан хэрэглээгүй. Меш нь эд анги тус бүрт нэг удаа гарч
-кэшлэгдэнэ (2–8 секунд), дараа нь шууд нээгдэнэ.
-
-| Үйлдэл | Товчлол |
-|---|---|
-| Тойруулах / зөөх / ойртуулах | чирэх · `Shift`+чирэх (эсвэл баруун товч) · дугуй |
-| Урдаас / Баруунаас / Дээрээс | `1` · `3` · `7` (`Ctrl`-тэй бол эсрэг тал) |
-| Перспектив ⇄ ортогональ | `5` |
-| Бүгдийг багтаах | `Home` эсвэл `.` |
-| Сүүдэрлэлт: битүү ⇄ материал ⇄ утсан загвар | `Z` · `Shift+Z` |
-| Хажуугийн самбар (хэмжээ, байрлал) | `N` |
-| AutoCAD-аар рендерлэх (далд шугам арилгасан) | `F12` |
-
-Баруун дээд булангийн тэнхлэгийн бөмбөлгүүд дээр товшиход тухайн харагдац руу
-жигд эргэнэ. Гөлгөрүүлэлт нь Blender-ийн адил 30 хэмийн босготой: цилиндр
-гөлгөр, ирмэг нь хурц хэвээр. Утсан загвар нь гурвалжны бүх ирмэг биш,
-зөвхөн эд ангийн жинхэнэ ирмэгүүдийг харуулна.
-
-### 2. Багцаар
-
-```powershell
-.\.venv\Scripts\python.exe parts3d\parts.py
-```
-
-`parts.py`-ийн `main()` доторх жагсаалтыг засаж, хүссэн эд ангиа үүсгэнэ.
-
-### 3. Кодоос
+Шинэ хавтас үүсгээд сангийн урд хаалгыг дуудна. Гүйцэтгэлийн давхаргыг
+өөрөө бичих шаардлагагүй — `.scr` бичих, UTF-16LE тайлах, мөрийн урт хэмжих,
+хаалт тоолох, timeout тавих ажлыг сан хариуцна:
 
 ```python
-import sys
+from dwgforge import Drawing, Layer, write_dwg
 
-sys.path.insert(0, "parts3d")
-from pathlib import Path
-from parts import Elbow, emit, run
-from partsan import load_table
-
-run(emit([Elbow(dn=150, angle=45.0, bend_radius=300.0)], load_table()), Path("tohoi.dwg"))
+dwg = Drawing()
+dwg.add_layer(Layer("ТЭНХЛЭГ", color=3))
+dwg.line((0, 0), (1000, 0), layer="ТЭНХЛЭГ")
+print(write_dwg(dwg, "out/plan.dwg").summary())
 ```
 
-## Хэмжээсийг засах — гурван түвшин
+3D биет үүсгэх бол `dwgforge.solids`-ийг ашиглана (`parts3d/parts.py`-г жишээ
+болгож харна уу).
 
-1. **`hemjees.json`** — DN хүснэгт (гадна диаметр, ханын зузаан, фланецын
-   хэмжээс). Энд засвал бүх эд ангид нөлөөлнө.
-2. **Дуудахдаа** — `Pipe(dn=100, wall=8.0)` нэг удаагийн дарж бичилт.
-3. **GUI дээр** — талбарыг хоосон орхивол хүснэгтээс авна, утга бичвэл дарж бичнэ.
+**Санд юу байх ёстой, юу энд байх ёстой вэ:** AutoCAD-ын аль ч програмд
+хэрэгтэй зүйл (солид үүсгэх, DWG-г PNG/STL болгох, зураг шинжлэх) санд
+харьяалагдана. Тухайн салбарын мэдлэг (хоолойн DN хүснэгт, үйлдвэрлэгчийн
+каталог, GUI-ийн талбарын нэрс) энд үлдэнэ.
 
-## Үйлдвэрлэгчийн хэмжээс — `local/`
+## Үйлдвэрлэгчийн хэмжээс
 
-Bray, Alfa Laval зэрэг компаниуд гарын авлагадаа хэмжээсийг дахин түгээхийг
-хориглосон заалттай ("shall not be copied ... without express written
-permission"). Тиймээс тэдгээрийн хүснэгт **энэ repo-д ОРООГҮЙ** — `parts3d/local/`
-хавтаснаас уншина, тэр хавтас нь gitignore хийгдсэн.
-
-`dn` (ASME B36.10 хоолой) ба `flange` (EN 1092-1) нь **нийтлэгдсэн стандарт**
-тул `hemjees.json` дотор хэвээр байна.
-
-Буцах хавхлага үүсгэхийн тулд `parts3d/local/bray_check.json`:
-
-```json
-{
-  "_багана": "[A face-to-face, B бие OD, C, D] мм",
-  "50":  [<A>, <B>, <C>, <D>],
-  "100": [<A>, <B>, <C>, <D>]
-}
-```
-
-`A` ба `B`-г үйлдвэрлэгчийн гарын авлагаас авна. `C`, `D` нь заавал биш —
-`C` байвал өргөх цагирагийн өндрийг тогтооход ашиглана.
-
-AlfaNova үүсгэгчид `parts3d/local/alfanova400.json` хэрэгтэй; бүтцийг
-`alfanova400.py`-ийн эхнээс үзнэ үү. Файл байхгүй бол тодорхой алдаа өгнө.
-
-## Туслах хэрэгслүүд
-
-| Файл | Юу хийдэг |
-|---|---|
-| `mesh.py` | DWG -> STL меш (`STLOUT`). GUI-ийн 3D харагдац үүн дээр ажиллана |
-| `zurag.py` | DWG -> PNG, AutoCAD-ын өөрийнх нь плоттероор (далд шугам арилгасан) |
-| `viewport.js` | Blender маягийн WebGL харагдац — сангүй, хөтөч дээр ажиллана |
-| `parts_shalgah.py` | Үүсгэсэн эд ангийн эзэлхүүнийг тооцоотой тулгана |
-| `dwg_unshih.py` | Байгаа DWG-г задлан шинжилнэ — давхарга, блок, entity, эзэлхүүн |
-| `dwg_gunzgii.py` | Блокийн ДОТОРХ геометрийг задалж хэмжинэ (санах ойд, файл хөндөхгүй) |
-| `alfanova400.py` | Alfa Laval AlfaNova 400 дулаан солилцуурын параметрт загвар |
-
-## Дизайны шалтгаанууд
-
-Эдгээр нь бүгд бодит туршилтаар тогтоогдсон:
-
-- **`entmake` нь 3D бие үүсгэж чадахгүй.** Хоосон бие буцаадаг — хэмжээсгүй.
-  Тиймээс солид үүсгэхэд `(command "_.CYLINDER" ...)` гэх мэт командууд хэрэгтэй.
-  Энэ нь dwgforge-ийн "entmake 100%" зарчмаас ялгаатай тул тусдаа сан болсон.
-- **`OSMODE 0` заавал.** Объект барих нь цэгийн оролтыг таслан авч, командын
-  дараалал алдагдвал бүх геометр чимээгүй эвдэрнэ.
-- **Команд бүрийн дараа `CMDNAMES` шалгана.** Асуулт дуусаагүй байхад дараагийн
-  мөр орвол түүнийг хариулт гэж уншаад цааш эвдэрнэ.
-- **`INSUNITS = 4` (мм).** Загварын өгөгдмөл нь метр — тэгвэл эд анги мм-ийн
-  зурагт орохдоо 1000 дахин томорно.
-- **Хөнгөн үрлэг зураг.** Civil 3D-ийн загвар 916 KB. `acadiso` (31 KB)-г
-  `/i`-гээр өгснөөр эд анги тус бүр 930 KB-аас **35 KB** болсон.
-- **`STLOUT` мешийг эерэг октант руу шилжүүлдэг.** Гэхдээ бүх биетийг НЭГ ижил
-  вектороор шилжүүлдэг тул харилцан байрлал нь эвдэрдэггүй (хоёр тусдаа
-  цилиндрээр шалгав). Жинхэнэ байрлалыг сэргээхийн тулд `EXTMIN/EXTMAX`-ыг
-  хажууд нь `.ext` файлд бичээд, харагдац дээр мешийн төвийг тэнд буулгана.
-  Асуултын дараалал нь: биетүүд → "хоёртын файл уу?" → файлын нэр.
-- **Торыг шугамаар зурж болохгүй.** Хэдэн мянган нэгж урт шугам камерын
-  хавтгайг огтлоход ойрын хавтгайд таслагдаж, дэлгэцийн координат нь зуун
-  мянган пиксел болдог. Тэр нь растержуулагчийн хамгаалалтын зурваснаас хальж,
-  GPU шугамыг бүхэлд нь ЧИМЭЭГҮЙ хаядаг — тор огт харагдахгүй. Тиймээс тор нь
-  хоёр гурвалжин бөгөөд хээг нь фрагмент бүрээр бодно (Blender ч мөн адил).
-
----
-
-## English
-
-`parts3d` generates parametric 3D piping parts as real AutoCAD solids, driven
-from Python via `dwgforge`. Requires AutoCAD 2026 / Civil 3D 2026 for
-`accoreconsole.exe`.
-
-Run the GUI with `python parts3d/gui.py` (stdlib `http.server`, no extra
-dependencies) and open `http://localhost:8765`. Edit `hemjees.json` to change
-the DN table, or pass overrides per part.
-
-`entmake` cannot build ACIS solids — it returns a degenerate body with no
-extents — so solid modelling here drives the command line instead, with
-`OSMODE 0` and a `CMDNAMES` drain after every command. Both were verified
-empirically; without them the geometry corrupts silently.
+Bray, Alfa Laval зэрэг компаниуд гарын авлагынхаа хэмжээсийг дахин түгээхийг
+хориглосон тул тэдгээр тоо **энэ repo-д ОРООГҮЙ**. `parts3d/local/` хавтас нь
+gitignore хийгдсэн; бүтцийг нь [`parts3d/README.md`](parts3d/README.md)
+тайлбарласан.

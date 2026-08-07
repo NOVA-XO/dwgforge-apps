@@ -1,0 +1,70 @@
+# ---------------------------------------------------------------- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# ------------------------------------------------------ Virtual environments -
+.venv/
+venv/
+env/
+
+# -------------------------------------------------------- Tooling caches -----
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---------------------------------------------------------------- Editors ----
+.vscode/
+.idea/
+*.swp
+*~
+
+# ---------------------------------------------------------------- Windows ----
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# -------------------------------------------------------- AutoCAD companions -
+# Lock files, autosaves, recovery files and plot logs AutoCAD drops next to a
+# drawing. A stale *.dwl in particular makes accoreconsole open the drawing
+# read-only, so it must never be committed.
+*.dwl
+*.dwl2
+*.bak
+*.sv$
+*.ac$
+*.err
+acad*.err
+*.log
+*.plt
+
+# Generated drawings. Everything an app writes is reproducible from source in
+# seconds, including the seed template it copies out of the AutoCAD install.
+*.dwg
+*.stl
+*.ext
+out/
+
+# ------------------------------------------------------- dwgforge artifacts --
+# The per-run .scr / .lsp / .log trio dwgforge writes beside every output DWG,
+# and the preview PNG/STL cache the GUI has AutoCAD produce on demand.
+.dwgforge/
+.preview/
+*.generated.lsp
+*.generated.scr
+
+# --------------------------------------------------- manufacturer data --
+# Catalogue dimensions transcribed from vendor manuals. Bray and Alfa Laval
+# both forbid redistribution ("shall not be copied ... without express
+# written permission"), so the numbers stay on the machine that needs them and
+# never enter this repository. parts3d/README.md documents the format.
+local/
+parts3d/local/

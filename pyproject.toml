@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dwgforge-apps"
+version = "0.1.0"
+description = "AutoCAD applications built on dwgforge."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{ name = "NOVA-XO", email = "superiornova068@gmail.com" }]
+# The whole point of this repository: the apps depend on the library the same
+# way anyone else would. To work against an unreleased library, override it in
+# the environment with `pip install -e ../dwgforge` -- do NOT add a path
+# dependency here, because that would make the pin untestable from a clean
+# checkout.
+dependencies = ["dwgforge>=0.1"]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.12", "pytest>=8.3"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["parts3d"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["build", "dist", ".venv"]
+
+[tool.ruff.lint]
+# Deliberately lighter than the library's. These are application scripts: they
+# print to a console, they are run as files rather than imported, and they are
+# not a typed public surface. The rules that remain are the ones that catch
+# real defects rather than style.
+select = ["E", "W", "F", "I", "UP", "B", "C4", "SIM", "RET", "PTH", "RUF"]
+ignore = [
+  "E501",
+  # Mongolian Cyrillic looks like Latin homoglyphs to ruff; enabling these
+  # keeps the lint permanently and uselessly red.
+  "RUF001", "RUF002", "RUF003",
+]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
