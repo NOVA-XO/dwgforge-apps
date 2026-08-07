@@ -30,6 +30,7 @@ from typing import Any
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 
+from mesh import export_stl, ext_path, read_extents  # noqa: E402
 from parts import CheckValve, Elbow, Flange, Pipe, Reducer, Tee, emit, run  # noqa: E402
 from partsan import load_table  # noqa: E402
 from zurag import VIEWS, render  # noqa: E402
@@ -146,9 +147,12 @@ def build_part(kind: str, params: dict[str, Any]) -> dict[str, Any]:
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
     secs = time.monotonic() - started
 
-    # Дахин барихад хуучин зураг хуучирсан тул устгана.
+    # Дахин барихад хуучин зураг, меш хоёр хуучирсан тул устгана.
     for stale in PREVIEW.glob(f"{part.name()}-*.png"):
         stale.unlink(missing_ok=True)
+    stl = PREVIEW / f"{part.name()}.stl"
+    stl.unlink(missing_ok=True)
+    ext_path(stl).unlink(missing_ok=True)
 
     if not ok or not out.is_file():
         return {"ok": False, "error": "AutoCAD үүсгэж чадсангүй — консолын гаралтыг харна уу"}
@@ -170,19 +174,36 @@ def list_parts() -> list[dict[str, Any]]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    """Маш жижиг API: HTML + 3 эндпойнт."""
+    """Маш жижиг API: HTML, харагдацын скрипт, дөрвөн эндпойнт."""
 
     def log_message(self, fmt: str, *args: Any) -> None:
         """Хүсэлт бүрийг лог руу цутгахгүй — консолыг цэвэр байлгана."""
 
     # -- туслах --------------------------------------------------------
-    def _send(self, code: int, body: bytes, ctype: str) -> None:
+    def _send(
+        self, code: int, body: bytes, ctype: str, extra: dict[str, str] | None = None
+    ) -> None:
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for key, val in (extra or {}).items():
+            self.send_header(key, val)
         self.end_headers()
         self.wfile.write(body)
+
+    def _query(self) -> dict[str, list[str]]:
+        return urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+
+    def _part_name(self, q: dict[str, list[str]]) -> str | None:
+        """Хүсэлтээс эд ангийн нэрийг цэвэрлэж авна.
+
+        Замын тэмдэгт орвол хавтаснаас гарах эрсдэлтэй тул шууд татгалзана.
+        """
+        name = (q.get("name") or [""])[0]
+        if not name or "/" in name or chr(92) in name or ".." in name:
+            return None
+        return name
 
     def _json(self, obj: Any, code: int = 200) -> None:
         self._send(
@@ -197,6 +218,12 @@ class Handler(BaseHTTPRequestHandler):
         if self.path in ("/", "/index.html"):
             html = (HERE / "gui.html").read_bytes()
             self._send(200, html, "text/html; charset=utf-8")
+        elif self.path == "/viewport.js":
+            self._send(
+                200,
+                (HERE / "viewport.js").read_bytes(),
+                "application/javascript; charset=utf-8",
+            )
         elif self.path == "/api/schema":
             table = load_table()
             self._json(
@@ -210,19 +237,43 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"parts": list_parts()})
         elif self.path.startswith("/api/preview"):
             self._preview()
-        elif self.path == "/api/views":
-            self._json({"views": list(VIEWS)})
+        elif self.path.startswith("/api/mesh"):
+            self._mesh()
         else:
             self._json({"error": "not found"}, 404)
 
+    def _mesh(self) -> None:
+        """STL меш — браузерын 3D харагдац үүн дээр ажиллана.
+
+        Мешийг AutoCAD гаргадаг тул нэг удаа гаргаад кэшлэнэ. Загварын жинхэнэ
+        хязгаарыг `X-Extents` толгойгоор явуулна: STLOUT нь мешийг эерэг октант
+        руу шилжүүлдэг тул үзүүлэлт нь эргүүлж байрлуулна.
+        """
+        name = self._part_name(self._query())
+        if name is None:
+            self._json({"error": "bad request"}, 400)
+            return
+        dwg = OUTDIR / f"{name}.dwg"
+        if not dwg.is_file():
+            self._json({"error": "no such part"}, 404)
+            return
+        stl = PREVIEW / f"{name}.stl"
+        if not stl.is_file():
+            # AutoCAD хүнд тул нэг зэрэг нэг л ажиллуулна.
+            with BUILD_LOCK:
+                if not stl.is_file() and export_stl(dwg, stl) is None:
+                    self._json({"error": "меш гаргаж чадсангүй"}, 500)
+                    return
+        ext = read_extents(ext_path(stl))
+        extra = {"X-Extents": ",".join(f"{v:.6f}" for v in ext)} if ext else {}
+        self._send(200, stl.read_bytes(), "model/stl", extra)
+
     def _preview(self) -> None:
         """PNG урьдчилсан харагдац. Байхгүй бол AutoCAD-аар нэг удаа гаргана."""
-        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-        name = (q.get("name") or [""])[0]
+        q = self._query()
+        name = self._part_name(q)
         view = (q.get("view") or ["swiso"])[0]
-        # Нэрийг цэвэрлэнэ: замын тэмдэгт орвол хавтаснаас гарах эрсдэлтэй.
-        bad = not name or "/" in name or chr(92) in name or ".." in name
-        if bad or view not in VIEWS:
+        if name is None or view not in VIEWS:
             self._json({"error": "bad request"}, 400)
             return
         dwg = OUTDIR / f"{name}.dwg"
