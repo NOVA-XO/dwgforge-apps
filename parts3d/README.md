@@ -26,14 +26,15 @@
 
 - **AutoCAD 2026 эсвэл Civil 3D 2026** — `accoreconsole.exe` түүнтэй хамт ирдэг.
   Үүнгүйгээр ажиллахгүй.
-- Python 3.12
-- `dwgforge` (энэ repo)
+- Python 3.12+
+- [`dwgforge`](https://pypi.org/project/dwgforge/) >= 0.2 — солид үүсгэлт,
+  гүйцэтгэл, sentinel протокол бүгд тэнд байна
 
 ## Суулгах
 
 ```powershell
-git clone https://github.com/NOVA-XO/dwgforge.git
-cd dwgforge
+git clone https://github.com/NOVA-XO/dwgforge-apps.git
+cd dwgforge-apps
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 .\.venv\Scripts\python.exe -m dwgforge doctor     # AutoCAD олдож байгаа эсэх
@@ -147,13 +148,17 @@ AlfaNova үүсгэгчид `parts3d/local/alfanova400.json` хэрэгтэй; �
 
 - **`entmake` нь 3D бие үүсгэж чадахгүй.** Хоосон бие буцаадаг — хэмжээсгүй.
   Тиймээс солид үүсгэхэд `(command "_.CYLINDER" ...)` гэх мэт командууд хэрэгтэй.
-  Энэ нь dwgforge-ийн "entmake 100%" зарчмаас ялгаатай тул тусдаа сан болсон.
+  Энэ нь `dwgforge`-ийн "entmake, never command" зарчмын **баримтжуулсан ганц
+  үл хамаарах зүйл** бөгөөд одоо санд өөрт нь, `dwgforge.solids` дотор байна.
+  Энэ апп зөвхөн ХООЛОЙН МЭДЛЭГ-ийг хариуцна.
 - **`OSMODE 0` заавал.** Объект барих нь цэгийн оролтыг таслан авч, командын
-  дараалал алдагдвал бүх геометр чимээгүй эвдэрнэ.
+  дараалал алдагдвал бүх геометр чимээгүй эвдэрнэ. (Санг prelude-даа тавьдаг.)
 - **Команд бүрийн дараа `CMDNAMES` шалгана.** Асуулт дуусаагүй байхад дараагийн
-  мөр орвол түүнийг хариулт гэж уншаад цааш эвдэрнэ.
+  мөр орвол түүнийг хариулт гэж уншаад цааш эвдэрнэ. (`DF:drain`.)
+- **Үүсгэлт бүрийн дараа шалгана.** Амжилтгүй команд алдаа өгдөггүй, зүгээр
+  `nil` буцаадаг — үүнгүйгээр биетгүй зураг "амжилттай" гэж тайлагнагдана.
 - **`INSUNITS = 4` (мм).** Загварын өгөгдмөл нь метр — тэгвэл эд анги мм-ийн
-  зурагт орохдоо 1000 дахин томорно.
+  зурагт орохдоо 1000 дахин томорно. (`SolidOptions.insunits`.)
 - **Хөнгөн үрлэг зураг.** Civil 3D-ийн загвар 916 KB. `acadiso` (31 KB)-г
   `/i`-гээр өгснөөр эд анги тус бүр 930 KB-аас **35 KB** болсон.
 - **`STLOUT` мешийг эерэг октант руу шилжүүлдэг.** Гэхдээ бүх биетийг НЭГ ижил
@@ -180,6 +185,8 @@ dependencies) and open `http://localhost:8765`. Edit `hemjees.json` to change
 the DN table, or pass overrides per part.
 
 `entmake` cannot build ACIS solids — it returns a degenerate body with no
-extents — so solid modelling here drives the command line instead, with
-`OSMODE 0` and a `CMDNAMES` drain after every command. Both were verified
-empirically; without them the geometry corrupts silently.
+extents — so solid modelling drives the command line instead, with `OSMODE 0`,
+a `CMDNAMES` drain after every command and a post-condition after every
+creation. All three were verified empirically; without them the geometry
+corrupts silently. That machinery now lives in `dwgforge.solids`, so this app
+holds only the piping knowledge: which dimension means what.

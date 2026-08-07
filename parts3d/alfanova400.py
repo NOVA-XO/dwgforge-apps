@@ -15,14 +15,25 @@ r"""Alfa Laval AlfaNova 400 / HP 400 — параметрт 3D загвар үү
 """
 
 import json
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+
+# Гүйцэтгэл ба солид үүсгэлтийг бүхэлд нь dwgforge хариуцна. Энэ файл нэгэн цагт
+# өөрийн r(), pt(), DRAIN, PRELUDE, run()-тэй байсан — бүгд нь сангийн дутуу
+# хуулбар: `.scr`-ээ бичсэн ХОЙНО мөрийн уртаа шалгадаг (гацдаг файлыг дискэн
+# дээр үлдээгээд татгалздаг), амжилтыг "@@@DONE" мөр байгаа эсэхээр шалгадаг
+# (скрипт өөрийн эх кодоо цуурайтуулдаг тул түүнийг хуурамчилж болно) байв.
+from dwgforge import SolidModel, solid_count, write_dwg
+from dwgforge.backends import find_accoreconsole
+from dwgforge.backends.accore import AccoreConsoleBackend
+from dwgforge.errors import DwgForgeError
+from parts import ensure_seed
+
 HERE = Path(__file__).parent
 OUTDIR = HERE / "alfanova"
-EXE = Path(r"C:\Program Files\Autodesk\AutoCAD 2026\accoreconsole.exe")
 
 # --------------------------------------------------------------------------
 # ПАРАМЕТРҮҮД — засах бол зөвхөн энэ хэсгийг
@@ -83,7 +94,7 @@ class Variant:
 
 
 # --------------------------------------------------------------------------
-# LISP үүсгэгч
+# Геометр
 # --------------------------------------------------------------------------
 
 
@@ -102,19 +113,17 @@ def pt(x: float, y: float, z: float) -> str:
     return f"(list {r(x)} {r(y)} {r(z)})"
 
 
-def unit_forms(v: Variant, ox: float, oy: float) -> list[str]:
-    """Нэг АГРЕГАТЫН бүх LISP мөр. (ox, oy) нь байрлуулах эхлэл."""
+def add_unit(model: SolidModel, v: Variant, ox: float, oy: float) -> None:
+    """Нэг агрегатыг модельд нэмнэ. (ox, oy) нь байрлуулах эхлэл."""
     a = v.a
     dia = DN[v.dn]
     z0 = FOOT_H  # их биеийн доод тал
 
-    f: list[str] = [f'(P "--- {v.name} ---")', "(setq E0 (entlast))"]
+    model.note(f"--- {v.name} ---")
+    start = model.mark()
 
     # 1. Их бие (ялтсын багц + бүрхүүлийн ялтас)
-    f += [
-        f'(command "_.BOX" {pt(ox, oy, z0)} {pt(ox + WIDTH, oy + a, z0)} {r(BODY_H)})',
-        DRAIN,
-    ]
+    model.box((ox, oy, z0), (WIDTH, a, BODY_H))
 
     # 2. Дөрвөн холбоос — урд гадаргуугаас -Y тийш цухуйна
     cx = ox + WIDTH / 2.0
@@ -122,104 +131,42 @@ def unit_forms(v: Variant, ox: float, oy: float) -> list[str]:
         for sz in (0.0, PORT_DZ):
             px = cx + sx
             pz = z0 + (BODY_H - PORT_DZ) / 2.0 + sz
-            f += [
-                f'(command "_.CYLINDER" {pt(px, oy, pz)} {r(dia / 2.0)}'
-                f' "_A" {pt(px, oy - PORT_LEN, pz)})',
-                DRAIN,
-            ]
+            model.cylinder((px, oy, pz), dia / 2.0, (px, oy - PORT_LEN, pz))
 
     # 3. Хөл: суурийн ялтас + хоёр хөл
     fx = ox + (WIDTH - FOOT_W_OUT) / 2.0
-    f += [
-        f'(command "_.BOX" {pt(fx, oy, 0.0)}'
-        f" {pt(fx + FOOT_W_OUT, oy + FOOT_D, 0.0)} {r(FOOT_PLATE_T)})",
-        DRAIN,
-    ]
+    model.box((fx, oy, 0.0), (FOOT_W_OUT, FOOT_D, FOOT_PLATE_T))
     leg_w = (FOOT_W_OUT - FOOT_W_IN) / 2.0
     for lx in (fx, fx + FOOT_W_OUT - leg_w):
-        f += [
-            f'(command "_.BOX" {pt(lx, oy, FOOT_PLATE_T)}'
-            f" {pt(lx + leg_w, oy + FOOT_D, FOOT_PLATE_T)} {r(FOOT_H - FOOT_PLATE_T)})",
-            DRAIN,
-        ]
+        model.box((lx, oy, FOOT_PLATE_T), (leg_w, FOOT_D, FOOT_H - FOOT_PLATE_T))
 
     # 4. Бүх шинэ биеийг нэг болгон нэгтгэнэ
-    f += [
-        "(setq SS (NEWSS E0))",
-        '(if (> (sslength SS) 1) (command "_.UNION" SS ""))',
-        DRAIN,
-        f'(P (strcat "  {v.name}|solids=" (itoa (NSOL))))',
-    ]
-    return f
+    model.union_since(start)
 
 
-DRAIN = (
-    '(setq dn 0) (while (and (/= (getvar "CMDNAMES") "") (< dn 20)) (command "") (setq dn (1+ dn)))'
-)
-
-PRELUDE = [
-    '(setvar "CMDECHO" 0)',
-    '(setvar "FILEDIA" 0)',
-    # OSMODE 0 ЗААВАЛ: объект барих нь цэгийн оролтыг таслан авч,
-    # командын дараалал алдагдвал бүх геометр эвдэрнэ (туршилтаар нотлогдсон).
-    '(setvar "OSMODE" 0)',
-    '(setvar "ORTHOMODE" 0)',
-    '(defun P (s) (princ (strcat "\\n@@@" s)) (princ))',
-    '(defun NSOL () (setq s (ssget "_X" (list (cons 0 "3DSOLID")))) (if s (sslength s) 0))',
-    # E0-ээс хойш үүссэн бүх обьектыг цуглуулна (ssget "_X" бол бүх зургийг авна).
-    "(defun NEWSS (e0 / ss e) (setq ss (ssadd)) (setq e (if e0 (entnext e0) (entnext)))"
-    " (while e (setq ss (ssadd e ss)) (setq e (entnext e))) ss)",
-]
-
-
-def run(forms: list[str], out: Path, label: str) -> bool:
-    """LISP мөрүүдийг accoreconsole-оор ажиллуулж, DWG хадгална."""
+def run(model: SolidModel, out: Path, label: str) -> bool:
+    """Моделийг гүйцэтгэж DWG хадгална."""
     out.parent.mkdir(parents=True, exist_ok=True)
-    p = out.as_posix()
-    body = [
-        *PRELUDE,
-        *forms,
-        f'(if (findfile "{p}") (vl-file-delete "{p}"))',
-        f'(command "_.SAVEAS" "2018" "{p}")',
-        DRAIN,
-        f'(P (strcat "saved|" (if (findfile "{p}") "yes" "no")))',
-        '(P "DONE")',
-        "(princ)",
-    ]
-    scr = out.with_suffix(".scr")
-    scr.write_bytes(b"\xef\xbb\xbf" + ("\r\n".join(body) + "\r\n").encode("utf-8"))
-
-    too_long = [ln for ln in body if len(ln) >= 1900]
-    if too_long:
-        print(f"  !! {len(too_long)} мөр 1900 тэмдэгтээс урт — AutoCAD гацна")
+    backend = AccoreConsoleBackend(template=ensure_seed())
+    try:
+        result = write_dwg(model, out, backend=backend, timeout=900.0, check=False)
+    except DwgForgeError as exc:
+        print(f"  FAIL {label:34s} бүтээхэд алдав: {exc}")
         return False
-
-    proc = subprocess.run(
-        [str(EXE), "/s", str(scr), "/l", "en-US"],
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        timeout=600,
-        check=False,
-        cwd=str(out.parent),
-    )
-    text = (proc.stdout + proc.stderr).decode("utf-16-le", errors="replace")
-    out.with_suffix(".log").write_text(text, encoding="utf-8")
-
-    errs = [ln.strip() for ln in text.splitlines() if "; error" in ln.lower()]
-    ok = "@@@DONE" in text and out.is_file() and not errs
     size = out.stat().st_size if out.is_file() else 0
-    print(f"  {'OK ' if ok else 'FAIL'} {label:34s} {size:>9,} byte")
-    for e in errs[:3]:
-        print(f"       ! {e[:100]}")
-    return ok
+    mark = "OK  " if result.ok else "FAIL"
+    print(f"  {mark} {label:34s} {size:>9,} byte  биет={solid_count(result)}")
+    for tag, message in result.failures[:3]:
+        print(f"       ! {tag}: {message[:90]}")
+    return result.ok
 
 
 # --------------------------------------------------------------------------
 
 
 def main() -> int:
-    if not EXE.is_file():
-        print(f"accoreconsole олдсонгүй: {EXE}")
+    if find_accoreconsole() is None:
+        print("accoreconsole олдсонгүй. DWGFORGE_ACCORECONSOLE-ыг тохируулна уу.")
         return 1
 
     plates = (10, 100, 270)
@@ -237,22 +184,24 @@ def main() -> int:
 
     # 1. Тойм зураг: 3 ялтас × 3 DN сүлжээгээр нэг файлд
     print("Тойм зураг (3 x 3 сүлжээ):")
-    forms: list[str] = []
+    overview = SolidModel()
     gap_x = 900.0
     gap_y = 1400.0
     for row, n in enumerate(plates):
         for col, dn in enumerate(dns):
-            forms += unit_forms(Variant(n, dn), ox=col * gap_x, oy=row * gap_y)
+            add_unit(overview, Variant(n, dn), ox=col * gap_x, oy=row * gap_y)
     total += 1
-    ok += run(forms, OUTDIR / "AlfaNova400-toim.dwg", "toim (9 hувилбар)")
+    ok += run(overview, OUTDIR / "AlfaNova400-toim.dwg", "toim (9 hувилбар)")
 
     # 2. Хувилбар тус бүр тусдаа файл — блокын сангийн эд анги
     print("\nТусдаа файлууд:")
     for n in plates:
         for dn in dns:
             v = Variant(n, dn)
+            model = SolidModel()
+            add_unit(model, v, 0.0, 0.0)
             total += 1
-            ok += run(unit_forms(v, 0.0, 0.0), OUTDIR / f"{v.name}.dwg", v.name)
+            ok += run(model, OUTDIR / f"{v.name}.dwg", v.name)
 
     print(f"\n{ok}/{total} амжилттай -> {OUTDIR}")
     return 0 if ok == total else 1
