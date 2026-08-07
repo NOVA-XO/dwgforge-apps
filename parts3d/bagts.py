@@ -18,10 +18,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+from dwgforge.backends import find_accoreconsole
 from parts import CheckValve, Elbow, Flange, Pipe, Reducer, Tee, emit, run
 from partsan import Table, load_table
-
-from dwgforge.backends import find_accoreconsole
 
 OUTDIR = Path(__file__).parent / "parts"
 

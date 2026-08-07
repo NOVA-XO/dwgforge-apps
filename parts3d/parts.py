@@ -25,15 +25,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-# Гүйцэтгэлийг dwgforge хариуцна: sentinel protocol, хаалтын тэнцвэр,
-# мөрийн уртын хязгаар, UTF-16LE тайлалт, timeout, артефакт бичилт.
-# Энд зөвхөн 3D геометрийн мөрүүд бидний хариуцлага.
-from partsan import PRELUDE, Build, P, Table, load_table
-
+# Гүйцэтгэл БА солид үүсгэлтийг dwgforge хариуцна: sentinel protocol, хаалтын
+# тэнцвэр, мөрийн уртын хязгаар, UTF-16LE тайлалт, timeout, артефакт бичилт,
+# командын дараах drain, үүсгэлт бүрийн дараах шалгалт.
+# Энд зөвхөн ХООЛОЙН МЭДЛЭГ л үлдэнэ: аль хэмжээс юуг тодорхойлох вэ гэдэг.
+from dwgforge import SolidModel, solid_count, write_dwg
 from dwgforge.backends import find_accoreconsole
 from dwgforge.backends.accore import AccoreConsoleBackend
 from dwgforge.errors import DwgForgeError
-from dwgforge.protocol import build_program
+from dwgforge.geometry import rad
+from dwgforge.protocol import NOTE_RE
+from partsan import Table, load_table
 
 OUTDIR = Path(__file__).parent / "parts"
 SEED = Path(__file__).parent / "seed" / "seed.dwg"
@@ -97,16 +99,16 @@ class Pipe:
     def name(self) -> str:
         return f"Pipe-DN{self.dn}-L{self.length:.0f}"
 
-    def build(self, b: Build, t: Table) -> None:
+    def build(self, m: SolidModel, t: Table) -> None:
         od = self.od if self.od is not None else t.od(self.dn)
         wall = self.wall if self.wall is not None else t.wall(self.dn)
         bore = od - 2.0 * wall
 
-        m0 = b.mark()
-        b.cyl((0.0, 0.0, 0.0), od / 2.0, (self.length, 0.0, 0.0))
-        m1 = b.mark()
-        b.cyl((-EPS, 0.0, 0.0), bore / 2.0, (self.length + EPS, 0.0, 0.0))
-        b.subtract_since(m0, m1)
+        m0 = m.mark()
+        m.cylinder((0.0, 0.0, 0.0), od / 2.0, (self.length, 0.0, 0.0))
+        m1 = m.mark()
+        m.cylinder((-EPS, 0.0, 0.0), bore / 2.0, (self.length + EPS, 0.0, 0.0))
+        m.subtract_since(m0, m1)
 
 
 @dataclass
@@ -122,7 +124,7 @@ class Elbow:
     def name(self) -> str:
         return f"Elbow-DN{self.dn}-{self.angle:.0f}deg"
 
-    def build(self, b: Build, t: Table) -> None:
+    def build(self, m: SolidModel, t: Table) -> None:
         od = self.od if self.od is not None else t.od(self.dn)
         wall = self.wall if self.wall is not None else t.wall(self.dn)
         bore = od - 2.0 * wall
@@ -132,18 +134,18 @@ class Elbow:
         cut_h = od
 
         # 1. Гадна их бие: бүтэн тор -> сектороор огтолно
-        m0 = b.mark()
-        b.torus((0.0, 0.0, 0.0), rb, od / 2.0)
-        b.pie(cut_r, self.angle, cut_h)
-        b.intersect_since(m0)
+        m0 = m.mark()
+        m.torus((0.0, 0.0, 0.0), rb, od / 2.0)
+        m.sector_prism(cut_r, rad(self.angle), cut_h)
+        m.intersect_since(m0)
 
         # 2. Дотоод нүх: ижил зүйл, жижиг хоолойгоор
-        m1 = b.mark()
-        b.torus((0.0, 0.0, 0.0), rb, bore / 2.0)
-        b.pie(cut_r, self.angle, cut_h)
-        b.intersect_since(m1)
+        m1 = m.mark()
+        m.torus((0.0, 0.0, 0.0), rb, bore / 2.0)
+        m.sector_prism(cut_r, rad(self.angle), cut_h)
+        m.intersect_since(m1)
 
-        b.subtract_since(m0, m1)
+        m.subtract_since(m0, m1)
 
 
 @dataclass
@@ -159,7 +161,7 @@ class Tee:
         bdn = self.branch_dn if self.branch_dn is not None else self.dn
         return f"Tee-DN{self.dn}x{bdn}"
 
-    def build(self, b: Build, t: Table) -> None:
+    def build(self, m: SolidModel, t: Table) -> None:
         od, bore = t.od(self.dn), t.id_(self.dn)
         bdn = self.branch_dn if self.branch_dn is not None else self.dn
         bod, bbore = t.od(bdn), t.id_(bdn)
@@ -168,15 +170,15 @@ class Tee:
         bl = self.branch_length if self.branch_length is not None else 1.5 * od
         cx = rl / 2.0
 
-        m0 = b.mark()
-        b.cyl((0.0, 0.0, 0.0), od / 2.0, (rl, 0.0, 0.0))
-        b.cyl((cx, 0.0, 0.0), bod / 2.0, (cx, bl, 0.0))
-        b.union_since(m0)
+        m0 = m.mark()
+        m.cylinder((0.0, 0.0, 0.0), od / 2.0, (rl, 0.0, 0.0))
+        m.cylinder((cx, 0.0, 0.0), bod / 2.0, (cx, bl, 0.0))
+        m.union_since(m0)
 
-        m1 = b.mark()
-        b.cyl((-EPS, 0.0, 0.0), bore / 2.0, (rl + EPS, 0.0, 0.0))
-        b.cyl((cx, 0.0, 0.0), bbore / 2.0, (cx, bl + EPS, 0.0))
-        b.subtract_since(m0, m1)
+        m1 = m.mark()
+        m.cylinder((-EPS, 0.0, 0.0), bore / 2.0, (rl + EPS, 0.0, 0.0))
+        m.cylinder((cx, 0.0, 0.0), bbore / 2.0, (cx, bl + EPS, 0.0))
+        m.subtract_since(m0, m1)
 
 
 @dataclass
@@ -190,25 +192,25 @@ class Reducer:
     def name(self) -> str:
         return f"Reducer-DN{self.dn}x{self.dn_small}"
 
-    def build(self, b: Build, t: Table) -> None:
+    def build(self, m: SolidModel, t: Table) -> None:
         od1, od2 = t.od(self.dn), t.od(self.dn_small)
         id1, id2 = t.id_(self.dn), t.id_(self.dn_small)
         ln = self.length if self.length is not None else max(3.0 * (od1 - od2), od1)
 
-        m0 = b.mark()
-        b.cone((0.0, 0.0, 0.0), od1 / 2.0, od2 / 2.0, (ln, 0.0, 0.0))
+        m0 = m.mark()
+        m.cone((0.0, 0.0, 0.0), od1 / 2.0, (ln, 0.0, 0.0), top_radius=od2 / 2.0)
 
         # Нүх нь хоёр үзүүрээс цухуйна. Налууг хадгалахын тулд радиусыг
         # сунгасан хэмжээгээр нь тохируулна, эс тэгвээс хана жигд бус болно.
-        m1 = b.mark()
+        m1 = m.mark()
         k = (id1 - id2) / 2.0 / ln
-        b.cone(
+        m.cone(
             (-EPS, 0.0, 0.0),
             id1 / 2.0 + k * EPS,
-            id2 / 2.0 - k * EPS,
             (ln + EPS, 0.0, 0.0),
+            top_radius=id2 / 2.0 - k * EPS,
         )
-        b.subtract_since(m0, m1)
+        m.subtract_since(m0, m1)
 
 
 @dataclass
@@ -226,7 +228,7 @@ class Flange:
     def name(self) -> str:
         return f"Flange-DN{self.dn}"
 
-    def build(self, b: Build, t: Table) -> None:
+    def build(self, m: SolidModel, t: Table) -> None:
         row = t.fl(self.dn)
         fo = self.outer if self.outer is not None else row[0]
         ft = self.thickness if self.thickness is not None else row[1]
@@ -238,19 +240,19 @@ class Flange:
         hl = self.hub_length if self.hub_length is not None else 1.5 * ft
         hub_base = od * 1.36  # хүзүүний суурийн диаметр
 
-        m0 = b.mark()
-        b.cyl((0.0, 0.0, 0.0), fo / 2.0, (ft, 0.0, 0.0))
-        b.cone((ft, 0.0, 0.0), hub_base / 2.0, od / 2.0, (ft + hl, 0.0, 0.0))
-        b.union_since(m0)
+        m0 = m.mark()
+        m.cylinder((0.0, 0.0, 0.0), fo / 2.0, (ft, 0.0, 0.0))
+        m.cone((ft, 0.0, 0.0), hub_base / 2.0, (ft + hl, 0.0, 0.0), top_radius=od / 2.0)
+        m.union_since(m0)
 
-        m1 = b.mark()
-        b.cyl((-EPS, 0.0, 0.0), bore / 2.0, (ft + hl + EPS, 0.0, 0.0))
+        m1 = m.mark()
+        m.cylinder((-EPS, 0.0, 0.0), bore / 2.0, (ft + hl + EPS, 0.0, 0.0))
         for i in range(nb):
             ang = 2.0 * math.pi * i / nb
             y = bc / 2.0 * math.cos(ang)
             z = bc / 2.0 * math.sin(ang)
-            b.cyl((-EPS, y, z), bh / 2.0, (ft + EPS, y, z))
-        b.subtract_since(m0, m1)
+            m.cylinder((-EPS, y, z), bh / 2.0, (ft + EPS, y, z))
+        m.subtract_since(m0, m1)
 
 
 @dataclass
@@ -281,7 +283,7 @@ class CheckValve:
         tag = "closed" if self.open_angle <= 0.5 else f"open{self.open_angle:.0f}"
         return f"CheckValve-DN{self.dn}-{tag}"
 
-    def build(self, b: Build, t: Table) -> None:
+    def build(self, m: SolidModel, t: Table) -> None:
         row = t.chk(self.dn)
         ff = self.face_to_face if self.face_to_face is not None else row[0]
         od = self.body_od if self.body_od is not None else row[1]
@@ -297,8 +299,8 @@ class CheckValve:
         seat_x = ff * 0.46  # суудлын хавтгай — оролтын хэлбэржүүлэлтийн ард
 
         # ---- 1. Гадна бие ------------------------------------------------
-        m0 = b.mark()
-        b.cyl((0.0, 0.0, 0.0), od / 2.0, (ff, 0.0, 0.0))
+        m0 = m.mark()
+        m.cylinder((0.0, 0.0, 0.0), od / 2.0, (ff, 0.0, 0.0))
 
         ring_ro = ring_t = ring_cz = 0.0
         if self.eye and rise > 8.0:
@@ -306,10 +308,10 @@ class CheckValve:
             ring_t = ring_ro * 0.60
             ring_cz = od / 2.0 + rise - ring_ro
             stem_r = max(4.0, rise * 0.11)
-            b.cyl((cx, 0.0, od / 2.0 - 3.0), stem_r, (cx, 0.0, ring_cz))
+            m.cylinder((cx, 0.0, od / 2.0 - 3.0), stem_r, (cx, 0.0, ring_cz))
             # Цагирагийг Y тэнхлэгийн дагуух цилиндрээр хийнэ: TORUS зөвхөн XY
             # хавтгайд үүсдэг тул эргүүлэх шаардлагагүй арга нь энэ.
-            b.cyl((cx, -ring_t / 2.0, ring_cz), ring_ro, (cx, ring_t / 2.0, ring_cz))
+            m.cylinder((cx, -ring_t / 2.0, ring_cz), ring_ro, (cx, ring_t / 2.0, ring_cz))
 
         hinge_z = bore / 2.0 + max(3.0, bore * 0.035)
         if self.detail:
@@ -317,41 +319,41 @@ class CheckValve:
             # цутгамал хавтангийн байрлал.
             pad_h = od * 0.20
             pad_y = math.sqrt(max((od / 2.0) ** 2 - (pad_h / 2.0) ** 2, 1.0))
-            b.box(ff * 0.24, pad_y - 4.0, -pad_h / 2.0, ff * 0.52, 7.0, pad_h)
+            m.box((ff * 0.24, pad_y - 4.0, -pad_h / 2.0), (ff * 0.52, 7.0, pad_h))
             # Нугасны тэнхлэгийн бөглөө — хоёр талд, Y тэнхлэгийн дагуу.
             plug_y = math.sqrt(max((od / 2.0) ** 2 - hinge_z**2, 1.0))
             plug_r = max(5.0, bore * 0.055)
             for sgn in (-1.0, 1.0):
-                b.cyl(
+                m.cylinder(
                     (seat_x, sgn * (plug_y - 6.0), hinge_z),
                     plug_r,
                     (seat_x, sgn * (plug_y + 3.0), hinge_z),
                 )
-        b.union_since(m0)
+        m.union_since(m0)
 
         # ---- 2. Дотоод: нүх, оролтын хэлбэржүүлэлт, ирмэгийн ховил -------
-        m1 = b.mark()
-        b.cyl((-EPS, 0.0, 0.0), bore / 2.0, (ff + EPS, 0.0, 0.0))
+        m1 = m.mark()
+        m.cylinder((-EPS, 0.0, 0.0), bore / 2.0, (ff + EPS, 0.0, 0.0))
         # Каталогийн "elliptical inlet shape designed to accelerate line media"
         # гэсэн онцлогийн хялбаршуулалт.
         inlet = min(bore * 1.16, od - 8.0)
-        b.cone((-EPS, 0.0, 0.0), inlet / 2.0, bore / 2.0, (seat_x * 0.75, 0.0, 0.0))
+        m.cone((-EPS, 0.0, 0.0), inlet / 2.0, (seat_x * 0.75, 0.0, 0.0), top_radius=bore / 2.0)
         if self.detail:
             # Гаралтын ирмэгийн ховил.
             ch = max(2.0, bore * 0.03)
-            b.cone(
+            m.cone(
                 (ff - ch, 0.0, 0.0),
                 bore / 2.0,
-                bore / 2.0 + ch,
                 (ff + EPS, 0.0, 0.0),
+                top_radius=bore / 2.0 + ch,
             )
         if ring_ro > 0.0:
-            b.cyl(
+            m.cylinder(
                 (cx, -ring_t / 2.0 - EPS, ring_cz),
                 ring_ro * 0.46,
                 (cx, ring_t / 2.0 + EPS, ring_cz),
             )
-        b.subtract_since(m0, m1)
+        m.subtract_since(m0, m1)
 
         # ---- 3. Хаалт — тусдаа бие, нугасны эргэн тойронд эргүүлнэ --------
         #
@@ -369,8 +371,8 @@ class CheckValve:
         dz = hz - disc_r * cos_t
         nx, nz = cos_t, sin_t  # хаалтын нормаль
 
-        m2 = b.mark()
-        b.cyl(
+        m2 = m.mark()
+        m.cylinder(
             (dx - nx * disc_t / 2.0, 0.0, dz - nz * disc_t / 2.0),
             disc_r,
             (dx + nx * disc_t / 2.0, 0.0, dz + nz * disc_t / 2.0),
@@ -383,12 +385,12 @@ class CheckValve:
         # хэлбэр байхгүй тул хязгаараас хэтэрвэл дуугүй өнгөрөхгүй, хэлнэ.
         reach = dx + disc_t / 2.0 * abs(nx) + disc_r * math.sqrt(max(1.0 - nx * nx, 0.0))
         if reach > ff + 0.5:
-            b.note(
+            m.note(
                 f"  ЗАНАЛХИЙЛЭЛ: {self.open_angle:.0f} градуст хаалт x={reach:.0f} "
                 f"хүрч, их бие {ff:.0f}-д дуусна — схемийн шинжтэй"
             )
         else:
-            b.note(f"  хаалт {self.open_angle:.0f} град, x={reach:.0f} <= {ff:.0f}")
+            m.note(f"  хаалт {self.open_angle:.0f} град, x={reach:.0f} <= {ff:.0f}")
 
     def max_fitting_angle(self, t: Table) -> float:
         """Хаалт их биед багтах хамгийн их нээлтийн өнцөг, градусаар."""
@@ -414,52 +416,45 @@ class CheckValve:
 # --------------------------------------------------------------------------
 
 
-def emit(parts: list, t: Table, spacing: float = 0.0) -> list[str]:
-    """Хэд хэдэн эд ангийг нэг LISP хөтөлбөр болгоно."""
-    b = Build()
+def emit(parts: list, t: Table, spacing: float = 0.0) -> SolidModel:
+    """Хэд хэдэн эд ангийг нэг солид модель болгоно.
+
+    `spacing` өгвөл эд анги бүрийг Y тэнхлэгийн дагуу зайлуулж тавина — тоймын
+    зурагт бүгдийг нэг дор харахад.
+    """
+    model = SolidModel()
     for i, p in enumerate(parts):
-        b.note(f"--- {p.name()} ---")
-        start = b.mark()
-        p.build(b, t)
+        model.note(f"--- {p.name()} ---")
+        start = model.mark()
+        p.build(model, t)
         if spacing:
-            b.lines.append(f"(setq _ss (SINCE {start}))")
-            b.cmd(
-                f'(if (> (sslength _ss) 0) (command "_.MOVE" _ss "" '
-                f"{P(0.0, 0.0, 0.0)} {P(0.0, i * spacing, 0.0)}))"
-            )
-        b.lines.append(f'(PR (strcat "  {p.name()}|solids=" (itoa (NSOL))))')
-    return b.lines
+            model.move_since(start, (0.0, i * spacing, 0.0))
+    return model
 
 
-def run(body: list[str], out: Path) -> bool:
-    """LISP-ийн биеийг dwgforge-ийн бүрхүүлд оруулж гүйцэтгэнэ.
+def run(model: SolidModel, out: Path) -> bool:
+    """Солид моделийг гүйцэтгэж DWG болгоно.
 
-    build_program нь prelude/SAVEAS/epilogue-г нэмээд хаалтын тэнцвэр, мөрийн
-    урт, sentinel-ийн хуурамчлалыг шалгана — тэдгээрийн аль нэг нь эвдэрвэл
-    accoreconsole үүрд гацдаг тул файл бичихээс ӨМНӨ таслах ёстой.
+    Гүйцэтгэлийн бүх ажлыг сан хариуцна: prelude/SAVEAS/epilogue-ийн бүрхүүл,
+    хаалтын тэнцвэр, мөрийн урт, sentinel-ийн хуурамчлалын шалгалт. Тэдгээрийн
+    аль нэг нь эвдэрвэл accoreconsole үүрд гацдаг тул файл бичихээс ӨМНӨ
+    таслагдана — тэр үед `DwgForgeError` гарна.
     """
     out.parent.mkdir(parents=True, exist_ok=True)
-    target = out.resolve()
+    backend = AccoreConsoleBackend(template=ensure_seed())
     try:
-        program = build_program(
-            [*PRELUDE, *body],
-            dwg_out=target,
-            dwg_format="2018",
-            max_line=AccoreConsoleBackend.max_line,
-        )
+        result = write_dwg(model, out, backend=backend, timeout=900.0, check=False)
     except DwgForgeError as exc:
         print(f"  FAIL {out.stem:24s} бүтээхэд алдав: {exc}")
         return False
 
-    backend = AccoreConsoleBackend(template=ensure_seed())
-    result = backend.run(program, target, timeout=900.0)
-
-    rep = [
-        ln.strip()[5:] for ln in result.transcript.splitlines() if ln.strip().startswith("@@@  ")
-    ]
-    size = target.stat().st_size if target.is_file() else 0
+    notes = " ".join(n.strip() for n in NOTE_RE.findall(result.transcript))
+    size = out.stat().st_size if out.is_file() else 0
     mark = "OK  " if result.ok else "FAIL"
-    print(f"  {mark} {out.stem:24s} {size:>9,}  {' '.join(rep)}")
+    print(
+        f"  {mark} {out.stem:24s} {size:>9,}  "
+        f"биет={solid_count(result)}  {result.entities_ok}/{len(model)}  {notes}"
+    )
     if not result.ok:
         for note in result.notes[:2]:
             print(f"       ! {note[:110]}")
