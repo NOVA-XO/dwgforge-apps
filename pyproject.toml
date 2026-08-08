@@ -15,7 +15,9 @@ authors = [{ name = "NOVA-XO", email = "superiornova068@gmail.com" }]
 # the environment with `pip install -e ../dwgforge` -- do NOT add a path
 # dependency here, because that would make the pin untestable from a clean
 # checkout.
-dependencies = ["dwgforge>=0.1"]
+# 0.3 is the release that carries `dwgforge.export`, which the GUI's preview and
+# 3D panes now call instead of the private zurag.py/mesh.py they used to ship.
+dependencies = ["dwgforge>=0.3"]
 
 [project.optional-dependencies]
 dev = ["ruff>=0.12", "pytest>=8.3"]

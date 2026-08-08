@@ -30,10 +30,9 @@ from typing import Any
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 
-from mesh import export_stl, ext_path, read_extents  # noqa: E402
+from dwgforge import VIEWS, DwgForgeError, MeshResult, export_stl, render_png  # noqa: E402
 from parts import CheckValve, Elbow, Flange, Pipe, Reducer, Tee, emit, run  # noqa: E402
 from partsan import load_table  # noqa: E402
-from zurag import VIEWS, render  # noqa: E402
 
 PORT = 8765
 OUTDIR = HERE / "parts"
@@ -152,7 +151,7 @@ def build_part(kind: str, params: dict[str, Any]) -> dict[str, Any]:
         stale.unlink(missing_ok=True)
     stl = PREVIEW / f"{part.name()}.stl"
     stl.unlink(missing_ok=True)
-    ext_path(stl).unlink(missing_ok=True)
+    extents_path(stl).unlink(missing_ok=True)
 
     if not ok or not out.is_file():
         return {"ok": False, "error": "AutoCAD үүсгэж чадсангүй — консолын гаралтыг харна уу"}
@@ -171,6 +170,43 @@ def list_parts() -> list[dict[str, Any]]:
         return []
     files = sorted(OUTDIR.glob("*.dwg"), key=lambda f: f.stat().st_mtime, reverse=True)
     return [{"name": f.stem, "size": f.stat().st_size, "path": str(f)} for f in files[:40]]
+
+
+# --------------------------------------------------------------------------
+# Мешийн хажуугийн хязгаарын файл
+# --------------------------------------------------------------------------
+#
+# STLOUT нь гаралтаа эерэг октант руу шилжүүлдэг тул үзүүлэлт нь загварыг
+# жинхэнэ байранд нь буцаахын тулд зургийн EXTMIN/EXTMAX-ыг мэдэх ёстой.
+# `export_stl` түүнийг `MeshResult` дотор буцаана — гэхдээ STL нь кэшлэгдэж,
+# дараагийн хүсэлт дээр AutoCAD дахин ажиллахгүй. Тиймээс энэ хоёр цэгийг
+# хажууд нь бичиж авах нь ЭНЭ АППЫН бүртгэл: сан нь хажуугийн файл үүсгэдэггүй.
+
+
+def extents_path(stl: Path) -> Path:
+    """STL-ийн хажуугийн хязгаарын файл."""
+    return stl.with_suffix(".ext")
+
+
+def save_extents(stl: Path, mesh: MeshResult) -> None:
+    """Мешийн хязгаарыг хажууд нь бичнэ. Хязгаар нь тодорхойгүй бол юу ч бичихгүй."""
+    lo, hi = mesh.extents_min, mesh.extents_max
+    if lo is None or hi is None:
+        return
+    nums = (lo.x, lo.y, lo.z, hi.x, hi.y, hi.z)
+    extents_path(stl).write_text(" ".join(f"{v:.6f}" for v in nums), encoding="utf-8")
+
+
+def read_extents(stl: Path) -> list[float] | None:
+    """Хажуугийн файлаас [minx miny minz maxx maxy maxz]. Уншигдахгүй бол None."""
+    path = extents_path(stl)
+    if not path.is_file():
+        return None
+    try:
+        nums = [float(v) for v in path.read_text(encoding="utf-8").split()]
+    except (OSError, ValueError):
+        return None
+    return nums if len(nums) == 6 else None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -261,10 +297,14 @@ class Handler(BaseHTTPRequestHandler):
         if not stl.is_file():
             # AutoCAD хүнд тул нэг зэрэг нэг л ажиллуулна.
             with BUILD_LOCK:
-                if not stl.is_file() and export_stl(dwg, stl) is None:
-                    self._json({"error": "меш гаргаж чадсангүй"}, 500)
-                    return
-        ext = read_extents(ext_path(stl))
+                if not stl.is_file():
+                    try:
+                        mesh = export_stl(dwg, stl)
+                    except DwgForgeError as exc:
+                        self._json({"error": f"меш гаргаж чадсангүй: {exc}"}, 500)
+                        return
+                    save_extents(stl, mesh)
+        ext = read_extents(stl)
         extra = {"X-Extents": ",".join(f"{v:.6f}" for v in ext)} if ext else {}
         self._send(200, stl.read_bytes(), "model/stl", extra)
 
@@ -284,9 +324,12 @@ class Handler(BaseHTTPRequestHandler):
         if not png.is_file():
             # AutoCAD хүнд тул нэг зэрэг нэг л ажиллуулна.
             with BUILD_LOCK:
-                if not png.is_file() and render(dwg, png, view=view) is None:
-                    self._json({"error": "render failed"}, 500)
-                    return
+                if not png.is_file():
+                    try:
+                        render_png(dwg, png, view=view)
+                    except DwgForgeError as exc:
+                        self._json({"error": f"зураг гаргаж чадсангүй: {exc}"}, 500)
+                        return
         self._send(200, png.read_bytes(), "image/png")
 
     def do_POST(self) -> None:
