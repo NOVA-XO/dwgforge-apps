@@ -144,14 +144,17 @@ def build_part(kind: str, params: dict[str, Any]) -> dict[str, Any]:
         except Exception as exc:
             traceback.print_exc()
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-    secs = time.monotonic() - started
 
-    # Дахин барихад хуучин зураг, меш хоёр хуучирсан тул устгана.
-    for stale in PREVIEW.glob(f"{part.name()}-*.png"):
-        stale.unlink(missing_ok=True)
-    stl = PREVIEW / f"{part.name()}.stl"
-    stl.unlink(missing_ok=True)
-    extents_path(stl).unlink(missing_ok=True)
+        # Дахин барихад хуучин зураг, меш хоёр хуучирсан тул устгана. Устгалт
+        # нь түгжээний ДОТОР байх ёстой: гадна нь байвал нислэг дэх хүсэлт
+        # файлыг олоод, уншихаас нь өмнө устгагдаж, хуучин байт эсвэл
+        # `FileNotFoundError` авна.
+        for stale in PREVIEW.glob(f"{part.name()}-*.png"):
+            stale.unlink(missing_ok=True)
+        stl = PREVIEW / f"{part.name()}.stl"
+        stl.unlink(missing_ok=True)
+        extents_path(stl).unlink(missing_ok=True)
+    secs = time.monotonic() - started
 
     if not ok or not out.is_file():
         return {"ok": False, "error": "AutoCAD үүсгэж чадсангүй — консолын гаралтыг харна уу"}
@@ -189,12 +192,20 @@ def extents_path(stl: Path) -> Path:
 
 
 def save_extents(stl: Path, mesh: MeshResult) -> None:
-    """Мешийн хязгаарыг хажууд нь бичнэ. Хязгаар нь тодорхойгүй бол юу ч бичихгүй."""
+    """Мешийн хязгаарыг хажууд нь бичнэ.
+
+    Хязгаар нь тодорхойгүй бол хуучин файлыг УСТГАНА. Үлдээвэл өмнөх
+    ажиллалтын координат шинэ мешийн дээр үйлчилж, загвар чимээгүй буруу
+    байранд гарна. Устгагдсан `mesh.py` нь экспортын өмнө яг үүнийг хийдэг
+    байсан — тэр хамгаалалт сан руу шилжихэд алдагдсан.
+    """
     lo, hi = mesh.extents_min, mesh.extents_max
+    path = extents_path(stl)
     if lo is None or hi is None:
+        path.unlink(missing_ok=True)
         return
     nums = (lo.x, lo.y, lo.z, hi.x, hi.y, hi.z)
-    extents_path(stl).write_text(" ".join(f"{v:.6f}" for v in nums), encoding="utf-8")
+    path.write_text(" ".join(f"{v:.6f}" for v in nums), encoding="utf-8")
 
 
 def read_extents(stl: Path) -> list[float] | None:
@@ -294,19 +305,32 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "no such part"}, 404)
             return
         stl = PREVIEW / f"{name}.stl"
-        if not stl.is_file():
-            # AutoCAD хүнд тул нэг зэрэг нэг л ажиллуулна.
-            with BUILD_LOCK:
-                if not stl.is_file():
-                    try:
-                        mesh = export_stl(dwg, stl)
-                    except DwgForgeError as exc:
-                        self._json({"error": f"меш гаргаж чадсангүй: {exc}"}, 500)
-                        return
-                    save_extents(stl, mesh)
-        ext = read_extents(stl)
+        # AutoCAD хүнд тул нэг зэрэг нэг л ажиллуулна — гэхдээ УНШИХ нь ч
+        # түгжээний дотор байх ёстой. Сан нь гаралтаа эцсийн зам руу шууд,
+        # аажим бичдэг (түр файл ашиглаад нэрлэдэггүй) тул түгжээгүй уншвал
+        # хоёр дахь таб хагас STL-ийг HTTP 200-аар авна.
+        with BUILD_LOCK:
+            if not stl.is_file():
+                try:
+                    mesh = export_stl(dwg, stl)
+                except DwgForgeError as exc:
+                    # Ажиллалт таслагдвал (timeout) хагас STL диск дээр ҮЛДДЭГ.
+                    # Цэвэрлэхгүй бол дараагийн хүсэлт түүнийг бэлэн кэш гэж
+                    # үзээд, таслагдсан мешийг хуучин `.ext`-тэй хамт үүрд
+                    # үйлчилнэ. Хосыг нь хамт устгана.
+                    stl.unlink(missing_ok=True)
+                    extents_path(stl).unlink(missing_ok=True)
+                    self._json({"error": f"меш гаргаж чадсангүй: {exc}"}, 500)
+                    return
+                save_extents(stl, mesh)
+            ext = read_extents(stl)
+            body = stl.read_bytes()
+        if ext is None:
+            # Мешийг хаяхгүй: дүрс нь зөв, зөвхөн байрлал нь STLOUT-ийн
+            # шилжүүлснээр үлдэнэ. Чимээгүй өнгөрөхгүйн тулд консолд бичнэ.
+            print(f"анхаар: {stl.name} — хязгаар мэдэгдэхгүй, байрлал сэргээгдэхгүй")
         extra = {"X-Extents": ",".join(f"{v:.6f}" for v in ext)} if ext else {}
-        self._send(200, stl.read_bytes(), "model/stl", extra)
+        self._send(200, body, "model/stl", extra)
 
     def _preview(self) -> None:
         """PNG урьдчилсан харагдац. Байхгүй бол AutoCAD-аар нэг удаа гаргана."""
@@ -321,16 +345,18 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "no such part"}, 404)
             return
         png = PREVIEW / f"{name}-{view}.png"
-        if not png.is_file():
-            # AutoCAD хүнд тул нэг зэрэг нэг л ажиллуулна.
-            with BUILD_LOCK:
-                if not png.is_file():
-                    try:
-                        render_png(dwg, png, view=view)
-                    except DwgForgeError as exc:
-                        self._json({"error": f"зураг гаргаж чадсангүй: {exc}"}, 500)
-                        return
-        self._send(200, png.read_bytes(), "image/png")
+        # `_mesh`-тэй ижил шалтгаанаар уншилт нь ч түгжээний дотор.
+        with BUILD_LOCK:
+            if not png.is_file():
+                try:
+                    render_png(dwg, png, view=view)
+                except DwgForgeError as exc:
+                    # `_mesh`-тэй ижил: хагас зураг үлдвэл кэш болж хувирна.
+                    png.unlink(missing_ok=True)
+                    self._json({"error": f"зураг гаргаж чадсангүй: {exc}"}, 500)
+                    return
+            body = png.read_bytes()
+        self._send(200, body, "image/png")
 
     def do_POST(self) -> None:
         """POST /api/build: эд анги үүсгэнэ."""

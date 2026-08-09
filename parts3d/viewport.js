@@ -1005,7 +1005,10 @@ window.VP = (function () {
         name, tris: m.n, verts: w.vpos.length / 3, lo: m.lo, hi: m.hi,
         size: Math.max(m.hi[0] - m.lo[0], m.hi[1] - m.lo[1], m.hi[2] - m.lo[2]),
       };
-      toast('');
+      // Хязгаар ирээгүй бол мешийг хаяхгүй — дүрс нь зөв. Гэхдээ байрлал нь
+      // STLOUT-ийн шилжүүлснээр үлдсэн тул хажуугийн самбарын координат
+      // худал болно. Чимээгүй өнгөрүүлэхгүй, хэрэглэгчид хэлнэ.
+      toast(ext ? '' : 'байрлал тодорхойгүй: хязгаар ирсэнгүй, координат шилжсэн');
       if (same) { updateHud(); requestRender(); } else { frameAll(true); }
       updatePanel();
     } catch (err) {
