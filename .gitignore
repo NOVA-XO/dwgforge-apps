@@ -68,3 +68,13 @@ out/
 # never enter this repository. parts3d/README.md documents the format.
 local/
 parts3d/local/
+
+# ------------------------------------------------------- company standard --
+# Harvested from a client drawing: layer names, text styles, block names and
+# the path to the source file. That is the client's drafting standard and the
+# project's folder layout, not ours to publish -- and it is machine-specific
+# anyway (regenerate with `python tulguur2d/zagvar.py holboh <your.dwg>`).
+# The seed DWG it produces is covered by the *.dwg rule above.
+tulguur2d/zagvar.json
+tulguur2d/uram/
+tulguur2d/tulguuruud.json

@@ -23,7 +23,7 @@ dependencies = ["dwgforge>=0.3"]
 dev = ["ruff>=0.12", "pytest>=8.3"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["parts3d"]
+packages = ["parts3d", "tulguur2d"]
 
 [tool.ruff]
 line-length = 100

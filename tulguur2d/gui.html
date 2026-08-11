@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tulguur2d — тулгуурын 2D зураг</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --line: #262b36; --ink: #e6e8ee;
+    --dim: #9aa3b2; --accent: #4c8dff; --ok: #3ecf8e; --err: #ff6b6b;
+    --warn: #f7c948; --view: #111419; --field: #20242d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+  }
+  header {
+    height: 62px; padding: 16px 22px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 14px;
+  }
+  header h1 { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: 0; }
+  header .sub { color: var(--dim); font-size: 13px; }
+  main {
+    display: grid; grid-template-columns: minmax(390px, 460px) minmax(620px, 1fr);
+    min-height: calc(100vh - 62px);
+  }
+  .pane { padding: 18px 20px; min-width: 0; }
+  .pane + .pane { border-left: 1px solid var(--line); }
+  .left {
+    display: flex; flex-direction: column; gap: 14px; max-height: calc(100vh - 62px);
+    overflow: hidden;
+  }
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  h2 {
+    margin: 0; color: var(--dim); font-size: 12px; font-weight: 650;
+    text-transform: uppercase; letter-spacing: .06em;
+  }
+  .count { color: var(--dim); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .filters {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  }
+  .filters .wide { grid-column: 1 / -1; }
+  .field label, .mini-label {
+    display: block; margin-bottom: 4px; color: var(--dim); font-size: 12px;
+  }
+  input, select {
+    width: 100%; height: 34px; padding: 6px 9px; border: 1px solid var(--line);
+    border-radius: 7px; background: var(--panel); color: var(--ink); font: inherit;
+  }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .seg { display: flex; flex-wrap: wrap; gap: 5px; }
+  button {
+    border: 1px solid var(--line); background: var(--panel); color: var(--dim);
+    border-radius: 7px; padding: 7px 10px; font: inherit; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    min-height: 34px;
+  }
+  button:hover { color: var(--ink); border-color: #3a4354; }
+  button.on, button.primary {
+    background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 650;
+  }
+  button.danger { color: var(--err); }
+  button:disabled { opacity: .55; cursor: progress; }
+  button svg { width: 15px; height: 15px; flex: none; }
+  .actions { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; }
+  .check {
+    display: flex; align-items: center; gap: 8px; color: var(--dim); font-size: 13px;
+    user-select: none;
+  }
+  .check input { width: 15px; height: 15px; padding: 0; }
+  .listbox {
+    flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--line);
+    border-radius: 7px; background: var(--panel);
+  }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th, td {
+    padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: left;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  th {
+    color: var(--dim); font-size: 11px; font-weight: 650; text-transform: uppercase;
+    letter-spacing: .04em; background: #141720; position: sticky; top: 0; z-index: 1;
+  }
+  td.num { text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { color: var(--accent); }
+  tbody tr.on td { color: var(--accent); font-weight: 650; }
+  .approx { color: var(--warn); opacity: .75; padding-left: 4px; }
+  .made { color: var(--ok); font-size: 11px; margin-left: 5px; }
+  .progress {
+    border: 1px solid var(--line); border-radius: 7px; background: var(--panel);
+    padding: 10px 12px; min-height: 94px;
+  }
+  .progress .top { display: flex; justify-content: space-between; gap: 10px; color: var(--dim); }
+  .meter { height: 7px; margin: 9px 0; border-radius: 999px; overflow: hidden; background: #0a0c10; }
+  .meter span { display: block; height: 100%; width: 0%; background: var(--accent); }
+  .last { color: var(--dim); font-size: 13px; min-height: 19px; }
+  .errs { margin-top: 6px; color: var(--err); font-size: 12px; white-space: pre-wrap; }
+  .right {
+    display: grid; grid-template-rows: auto minmax(300px, 43vh) minmax(230px, 1fr);
+    gap: 14px; max-height: calc(100vh - 62px); overflow: hidden;
+  }
+  .headrow {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center;
+  }
+  .title { min-width: 0; }
+  .title h2 { margin-bottom: 7px; }
+  .shifr { font-size: 26px; line-height: 1.1; font-weight: 700; letter-spacing: 0; }
+  .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .badge {
+    border: 1px solid var(--line); border-radius: 999px; padding: 3px 8px;
+    color: var(--dim); background: var(--panel); font-size: 12px;
+  }
+  .build { min-width: 150px; height: 42px; }
+  .msg {
+    margin-top: 10px; padding: 9px 11px; border: 1px solid var(--line);
+    background: var(--panel); border-radius: 7px; white-space: pre-wrap; color: var(--dim);
+  }
+  .msg.ok { border-color: var(--ok); color: var(--ink); }
+  .msg.err { border-color: var(--err); color: var(--err); }
+  .preview {
+    border: 1px solid var(--line); border-radius: 7px; background: var(--view);
+    display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+  }
+  .preview .cap {
+    flex: none; display: flex; align-items: center; justify-content: space-between;
+    padding: 7px 10px; color: var(--dim); background: #141720; border-bottom: 1px solid var(--line);
+    font-size: 12px;
+  }
+  .preview .stage {
+    flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center;
+    padding: 10px; color: var(--dim);
+  }
+  .preview img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .passport {
+    min-height: 0; overflow: auto; border: 1px solid var(--line);
+    border-radius: 7px; background: var(--panel);
+  }
+  .passport table { table-layout: auto; }
+  .passport th { width: 220px; position: static; }
+  .passport td { white-space: normal; overflow: visible; text-overflow: clip; }
+  .mono { font-family: Consolas, "Courier New", monospace; }
+  .dim { color: var(--dim); }
+  .torgrid {
+    display: grid; grid-template-columns: repeat(4, minmax(70px, 1fr));
+    gap: 4px; font-variant-numeric: tabular-nums;
+  }
+  .torgrid span { padding: 3px 6px; background: var(--field); border-radius: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>tulguur2d</h1>
+  <span class="sub">ЭСП 1968-1976 · ВЛ 35-500 кВ · 2D DWG</span>
+</header>
+
+<main>
+  <section class="pane left">
+    <div class="bar">
+      <h2>Каталог</h2>
+      <span class="count" id="count">ачаалж байна</span>
+    </div>
+
+    <div class="filters">
+      <div class="field wide">
+        <label>Хүчдэл</label>
+        <div class="seg" id="hutsel"></div>
+      </div>
+      <div class="field">
+        <label for="angilal">Ангилал</label>
+        <select id="angilal"></select>
+      </div>
+      <div class="field">
+        <label for="hai">Шифрээр хайх</label>
+        <input id="hai" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="field">
+        <span class="mini-label">Материал</span>
+        <div class="seg" id="material"></div>
+      </div>
+      <div class="field">
+        <span class="mini-label">Цеп</span>
+        <div class="seg" id="tsep"></div>
+      </div>
+      <label class="check wide"><input type="checkbox" id="force"> Дахин үүсгэх</label>
+      <label class="check wide" title="Танай хуудасны блок дотор, тайлбар ба булангийн хүснэгттэй"><input type="checkbox" id="a3"> АЗ хуудас (танай хүрээ + штамп)</label>
+      <div class="actions wide">
+        <button id="bagts" type="button">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+            <path d="M3 3h10v3H3zM3 8h10v5H3z"/><path d="M6 10h4"/>
+          </svg>
+          Багц DWG
+        </button>
+        <button id="toim" type="button">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+            <path d="M2.5 2.5h4v4h-4zM9.5 2.5h4v4h-4zM2.5 9.5h4v4h-4zM9.5 9.5h4v4h-4z"/>
+          </svg>
+          Тойм хуудас
+        </button>
+        <button id="zogs" type="button" class="danger" title="Багц ажиллагааг зогсоох">
+          <svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="4" width="8" height="8" rx="1.2"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="listbox">
+      <table>
+        <thead>
+          <tr><th style="width:37%">Шифр</th><th class="num">Өндөр</th><th class="num">Масс</th><th class="num">Лист</th></tr>
+        </thead>
+        <tbody id="list"><tr><td colspan="4" class="dim">ачаалж байна</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="progress">
+      <div class="top">
+        <span id="pmsg">бэлэн</span>
+        <span id="pnum">0/0</span>
+      </div>
+      <div class="meter"><span id="pbar"></span></div>
+      <div class="last" id="plast"></div>
+      <div class="errs" id="perr"></div>
+    </div>
+  </section>
+
+  <section class="pane right">
+    <div>
+      <div class="headrow">
+        <div class="title">
+          <h2>Паспорт</h2>
+          <div class="shifr" id="sel">-</div>
+          <div class="badges" id="badges"></div>
+        </div>
+        <button class="primary build" id="build" type="button">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+            <path d="M8 2v8"/><path d="M4.5 6.5 8 10l3.5-3.5"/><path d="M3 13.5h10"/>
+          </svg>
+          Үүсгэх
+        </button>
+      </div>
+      <div id="msg"></div>
+    </div>
+
+    <div class="preview">
+      <div class="cap"><span>Урьдчилсан зураг</span><span id="previewName"></span></div>
+      <div class="stage" id="stage">DWG үүсгэсний дараа PNG харагдана</div>
+    </div>
+
+    <div class="passport">
+      <table><tbody id="passport"></tbody></table>
+    </div>
+  </section>
+</main>
+
+<script>
+let DATA = null;
+let FILTER = { hutsel: '', angilal: '', material: '', tsep: '', hai: '' };
+let SHOWN = [];
+let SELECTED = null;
+let POLL_WAS_RUNNING = false;
+
+const $ = (id) => document.getElementById(id);
+
+function iconOk() {
+  return '<span class="made" title="DWG байна">DWG</span>';
+}
+
+function fmt(v, unit = '') {
+  if (v === null || v === undefined || v === '') return '<span class="dim">-</span>';
+  if (typeof v === 'number') return Number.isInteger(v) ? String(v) + unit : v.toFixed(2) + unit;
+  return String(v);
+}
+
+function text(v) {
+  return v === null || v === undefined || v === '' ? '-' : String(v);
+}
+
+function setMsg(kind, value) {
+  const box = $('msg');
+  box.className = value ? 'msg ' + (kind || '') : '';
+  box.textContent = value || '';
+}
+
+async function api(path, body) {
+  const r = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {})
+  });
+  const d = await r.json();
+  if (!r.ok || !d.ok) throw new Error(d.error || 'серверийн алдаа');
+  return d;
+}
+
+function makeSeg(id, values, current, labeler, onpick) {
+  const box = $(id);
+  box.innerHTML = '';
+  values.forEach((v) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = labeler(v);
+    b.className = String(current) === String(v) ? 'on' : '';
+    b.onclick = () => {
+      Array.from(box.children).forEach(x => x.classList.toggle('on', x === b));
+      onpick(v);
+    };
+    box.appendChild(b);
+  });
+}
+
+function filtersPayload() {
+  return {
+    hutsel: FILTER.hutsel,
+    angilal: FILTER.angilal,
+    material: FILTER.material,
+    tsep: FILTER.tsep,
+    hai: FILTER.hai
+  };
+}
+
+function match(t) {
+  if (FILTER.hutsel && t.hutsel !== Number(FILTER.hutsel)) return false;
+  if (FILTER.angilal && t.angilal !== FILTER.angilal) return false;
+  if (FILTER.material && t.material !== FILTER.material) return false;
+  if (FILTER.tsep && t.tsep !== Number(FILTER.tsep)) return false;
+  const h = FILTER.hai.trim().toLowerCase();
+  if (h && !t.shifr.toLowerCase().includes(h)) return false;
+  return true;
+}
+
+function applyFilters() {
+  SHOWN = DATA.tulguur.filter(match);
+  $('count').textContent = SHOWN.length + ' / ' + DATA.niit;
+  renderList();
+  if (!SELECTED || !SHOWN.some(t => t.shifr === SELECTED.shifr)) {
+    selectTulguur(SHOWN[0] || null);
+  } else {
+    markSelected();
+  }
+}
+
+function markSelected() {
+  document.querySelectorAll('#list tr').forEach((tr) => {
+    tr.classList.toggle('on', SELECTED && tr.dataset.shifr === SELECTED.shifr);
+  });
+}
+
+function renderList() {
+  const tb = $('list');
+  tb.innerHTML = '';
+  if (!SHOWN.length) {
+    tb.innerHTML = '<tr><td colspan="4" class="dim">тохирох тулгуур алга</td></tr>';
+    return;
+  }
+  SHOWN.forEach((t) => {
+    const tr = document.createElement('tr');
+    tr.dataset.shifr = t.shifr;
+    const approx = t.batalgaa ? '' : '<span class="approx" title="хэмжээс ойролцоо">≈</span>';
+    const made = t.files && t.files.dwg ? iconOk() : '';
+    const mass = t.jin_ts || t.jin;
+    tr.innerHTML =
+      '<td class="mono">' + t.shifr + approx + made + '</td>' +
+      '<td class="num">' + fmt(t.undur, ' м') + '</td>' +
+      '<td class="num">' + fmt(mass, ' кг') + '</td>' +
+      '<td class="num">' + fmt(t.huudas) + '</td>';
+    tr.onclick = () => selectTulguur(t);
+    tb.appendChild(tr);
+  });
+  markSelected();
+}
+
+function addRow(tb, label, value) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = '<th>' + label + '</th><td>' + value + '</td>';
+  tb.appendChild(tr);
+}
+
+function torValue(tor) {
+  if (!tor.length) return '<span class="dim">-</span>';
+  const cells = ['<span>#</span><span>z, м</span><span>зүүн, м</span><span>баруун, м</span>'];
+  tor.forEach((x, i) => {
+    cells.push('<span>' + (i + 1) + '</span>');
+    cells.push('<span>' + fmt(x.z) + '</span>');
+    cells.push('<span>' + fmt(x.zuun) + '</span>');
+    cells.push('<span>' + fmt(x.baruun) + '</span>');
+  });
+  return '<div class="torgrid">' + cells.join('') + '</div>';
+}
+
+function renderPassport(t) {
+  $('sel').textContent = t ? t.shifr : '-';
+  $('badges').innerHTML = '';
+  $('passport').innerHTML = '';
+  $('previewName').textContent = '';
+  if (!t) {
+    $('stage').textContent = 'сонгох тулгуур алга';
+    return;
+  }
+  [t.hutsel + ' кВ', t.angilal, t.material, t.tsep + ' цеп', t.hev].forEach((v) => {
+    const b = document.createElement('span');
+    b.className = 'badge';
+    b.textContent = v;
+    $('badges').appendChild(b);
+  });
+  const tb = $('passport');
+  addRow(tb, DATA.labels.shifr, '<span class="mono">' + t.shifr + '</span>');
+  addRow(tb, DATA.labels.ner, '<span class="mono">' + t.ner + '.dwg</span>');
+  addRow(tb, DATA.labels.hutsel, fmt(t.hutsel, ' кВ'));
+  addRow(tb, DATA.labels.tsep, fmt(t.tsep));
+  addRow(tb, DATA.labels.angilal, text(t.angilal));
+  addRow(tb, DATA.labels.material, text(t.material));
+  addRow(tb, DATA.labels.hev, text(t.hev));
+  addRow(tb, DATA.labels.undur, fmt(t.undur, ' м'));
+  addRow(tb, DATA.labels.dood, fmt(t.dood, ' м'));
+  addRow(tb, DATA.labels.suuri, fmt(t.suuri, ' м'));
+  addRow(tb, DATA.labels.orgil, fmt(t.orgil, ' м'));
+  addRow(tb, DATA.labels.urgun, fmt(t.urgun, ' м'));
+  addRow(tb, DATA.labels.tor, torValue(t.tor));
+  addRow(tb, DATA.labels.uzuur, fmt(t.uzuur));
+  addRow(tb, DATA.labels.tatlaga, fmt(t.tatlaga, ' м'));
+  addRow(tb, DATA.labels.hol, fmt(t.hol, ' м'));
+  addRow(tb, DATA.labels.jin, fmt(t.jin, ' кг'));
+  addRow(tb, DATA.labels.jin_ts, fmt(t.jin_ts, ' кг'));
+  addRow(tb, DATA.labels.shem, text(t.shem));
+  addRow(tb, DATA.labels.huudas, fmt(t.huudas));
+  addRow(tb, DATA.labels.utas, text(t.utas));
+  addRow(tb, DATA.labels.tros, text(t.tros));
+  addRow(tb, DATA.labels.mus, text(t.mus));
+  addRow(tb, DATA.labels.temdeglel, text(t.temdeglel));
+  addRow(tb, DATA.labels.batalgaa, t.batalgaa ? 'тийм' : 'үгүй, ойролцоо');
+  showPreview(t, false);
+}
+
+function showPreview(t, fresh) {
+  $('previewName').textContent = t.ner + '.png';
+  if (fresh || (t.files && t.files.png)) {
+    const img = new Image();
+    img.onload = () => { $('stage').innerHTML = ''; $('stage').appendChild(img); };
+    img.onerror = () => { $('stage').textContent = 'PNG уншиж чадсангүй'; };
+    img.src = '/api/preview?name=' + encodeURIComponent(t.ner) + '&t=' + Date.now();
+  } else if (t.files && t.files.dwg) {
+    $('stage').textContent = 'DWG байна, Үүсгэх товч PNG-г шинэчилнэ';
+  } else {
+    $('stage').textContent = 'DWG үүсгэсний дараа PNG харагдана';
+  }
+}
+
+function selectTulguur(t) {
+  SELECTED = t;
+  markSelected();
+  renderPassport(t);
+  setMsg('', '');
+}
+
+function updateTulguur(next) {
+  const i = DATA.tulguur.findIndex(t => t.shifr === next.shifr);
+  if (i >= 0) DATA.tulguur[i] = next;
+  SELECTED = next;
+  applyFilters();
+  selectTulguur(next);
+}
+
+async function buildSelected() {
+  if (!SELECTED || $('build').disabled) return;
+  $('build').disabled = true;
+  $('build').textContent = 'AutoCAD...';
+  setMsg('', 'Хүлээнэ үү, DWG болон PNG шалгаж байна.');
+  try {
+    const d = await api('/api/zurag', {
+      shifr: SELECTED.shifr,
+      force: $('force').checked,
+      a3: $('a3').checked
+    });
+    updateTulguur(d.tulguur);
+    showPreview(d.tulguur, true);
+    const cache = d.cached ? 'кэш ашиглав' : 'үүсгэв';
+    setMsg('ok', d.shifr + ' — ' + cache + '\n' + d.path + '\n' + d.seconds + ' сек');
+  } catch (e) {
+    setMsg('err', String(e.message || e));
+  } finally {
+    $('build').disabled = false;
+    $('build').innerHTML =
+      '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">' +
+      '<path d="M8 2v8"/><path d="M4.5 6.5 8 10l3.5-3.5"/><path d="M3 13.5h10"/></svg>Үүсгэх';
+  }
+}
+
+async function startJob(path) {
+  setMsg('', '');
+  try {
+    await api(path, { filters: filtersPayload(), force: $('force').checked, a3: $('a3').checked });
+    await pollYavts();
+  } catch (e) {
+    setMsg('err', String(e.message || e));
+  }
+}
+
+async function stopJob() {
+  try {
+    await api('/api/zogs', {});
+    await pollYavts();
+  } catch (e) {
+    setMsg('err', String(e.message || e));
+  }
+}
+
+function renderYavts(y) {
+  const pct = y.total ? Math.max(0, Math.min(100, y.done * 100 / y.total)) : 0;
+  $('pbar').style.width = pct + '%';
+  $('pnum').textContent = y.done + '/' + y.total;
+  $('pmsg').textContent = y.message || (y.running ? 'ажиллаж байна' : 'бэлэн');
+  $('plast').textContent = y.last ? 'Сүүлийн: ' + y.last : (y.out ? 'Гаралт: ' + y.out : '');
+  $('perr').textContent = y.errors && y.errors.length ? y.errors.join('\n') : '';
+  $('bagts').disabled = y.running;
+  $('toim').disabled = y.running;
+  $('zogs').disabled = !y.running;
+  if (POLL_WAS_RUNNING && !y.running) loadCatalog(true);
+  POLL_WAS_RUNNING = y.running;
+}
+
+async function pollYavts() {
+  try {
+    const r = await fetch('/api/yavts');
+    const d = await r.json();
+    if (d.ok) renderYavts(d.yavts);
+  } catch (e) {
+    $('pmsg').textContent = 'явц уншиж чадсангүй';
+  }
+}
+
+async function loadCatalog(keepSelection) {
+  const old = SELECTED && SELECTED.shifr;
+  try {
+    const r = await fetch('/api/katalog');
+    DATA = await r.json();
+    if (!DATA.ok) throw new Error(DATA.error || 'каталог уншигдсангүй');
+  } catch (e) {
+    $('count').textContent = 'алдаа';
+    $('list').innerHTML = '<tr><td colspan="4" class="dim">' + String(e.message || e) + '</td></tr>';
+    return;
+  }
+  makeSeg('hutsel', ['', ...DATA.hutseluud], FILTER.hutsel, v => v || 'Бүгд', (v) => {
+    FILTER.hutsel = v; applyFilters();
+  });
+  makeSeg('material', ['', ...DATA.material], FILTER.material, v => v || 'Бүгд', (v) => {
+    FILTER.material = v; applyFilters();
+  });
+  makeSeg('tsep', ['', ...DATA.tsep], FILTER.tsep, v => v ? String(v) : 'Бүгд', (v) => {
+    FILTER.tsep = v; applyFilters();
+  });
+  $('angilal').innerHTML = '<option value="">Бүгд</option>' +
+    DATA.angilal.map(v => '<option value="' + v + '">' + v + '</option>').join('');
+  $('angilal').value = FILTER.angilal;
+  if (keepSelection && old) {
+    SELECTED = DATA.tulguur.find(t => t.shifr === old) || SELECTED;
+  }
+  applyFilters();
+}
+
+$('angilal').onchange = () => { FILTER.angilal = $('angilal').value; applyFilters(); };
+$('hai').oninput = () => { FILTER.hai = $('hai').value; applyFilters(); };
+$('build').onclick = buildSelected;
+$('bagts').onclick = () => startJob('/api/багц');
+$('toim').onclick = () => startJob('/api/toim');
+$('zogs').onclick = stopJob;
+
+document.addEventListener('keydown', (e) => {
+  const tag = document.activeElement ? document.activeElement.tagName : '';
+  const typing = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
+  if (e.key === '/' && !typing) {
+    e.preventDefault();
+    $('hai').focus();
+    $('hai').select();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    buildSelected();
+  }
+});
+
+loadCatalog(false);
+pollYavts();
+setInterval(pollYavts, 1000);
+</script>
+</body>
+</html>
