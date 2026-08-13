@@ -70,6 +70,15 @@ ZAGVAR = _zagvar()
 HOLBOLT: dict[str, str] = {k: v for k, v in (ZAGVAR.get("holbolt") or {}).items() if v}
 BICHGIIN_HEV: str = ZAGVAR.get("bichgiin_hev") or "Standard"
 
+#: Хэмжээсийн бичээсийн суурь өндөр: цаасны 2.5 мм / 1000 (модель нь метр).
+HEM_TXT: float = 0.0025
+#: Хэмжээст зориулсан ХУВЬСАХ өндөртэй бичгийн хэвийн нэр.
+HEM_HEV: str = "ХЭМЖЭЭС-ФОНТ"
+#: Түүний фонт — танай хэвийнхтэй ижил байхыг хичээнэ.
+HEM_FONT: str = ZAGVAR.get("bichgiin_font") or "isocpeur.ttf"
+#: Өв авах DIMSTYLE (жишээ нь "ГОСТ"). Хоосон бол идэвхтэй хэвээс өвлөнө.
+HEM_SUURI: str = ZAGVAR.get("hemjeesiin_suuri") or ""
+
 
 def lay(uureg: str) -> str:
     """Дотоод үүргийн нэрийг компанийн давхаргын нэр рүү хөрвүүлнэ."""
@@ -204,29 +213,55 @@ class Zurag:
         )
 
     # -- хэмжээс -----------------------------------------------------------
+    #
+    # ЖИНХЭНЭ DIMENSION. Өмнө нь гурван шугам + нэг текстээр "хэмжээс шиг"
+    # харагдах зүйл зурдаг байсан — AutoCAD дотор чирвэл тоо нь дагахгүй,
+    # DIMSTYLE-д захирагдахгүй, хэмжээс гэж сонгогдохгүй. Одоо dwgforge-ийн
+    # Dimension entity гарна: тоог AutoCAD өөрөө хэмжинэ, бид зөвхөн
+    # каталогийн бичвэрийг дарж бичнэ (жишээ нь "19" биш "19,0").
 
-    def hem_bosoo(self, x: float, z0: float, z1: float, text: str, h: float) -> None:
-        """Босоо хэмжээсийн шугам, хоёр үзүүрт зураас, дундуур нь бичээс."""
-        self.shugam(x, z0, x, z1, L_HEM)
-        for z in (z0, z1):
-            self.shugam(x - h * 0.5, z - h * 0.5, x + h * 0.5, z + h * 0.5, L_HEM)
-        self.dwg.text(
-            (self.ox + x - h * 0.4, self.oz + (z0 + z1) / 2.0),
-            text,
-            height=h,
-            style=BICHGIIN_HEV,
-            rotation=math.pi / 2.0,
-            halign=1,
-            align_point=(self.ox + x - h * 0.4, self.oz + (z0 + z1) / 2.0),
+    def _hem_hev(self, h: float) -> str:
+        """`h` модель өндөртэй бичээс гаргах DIMSTYLE-ыг бүртгээд нэрийг нь өгнө.
+
+        Хэмжээсийн бичээсийн өндөр нь DIMTXT × DIMSCALE. DIMTXT-ыг цаасны
+        2.5 мм дээр тогтоогоод масштабыг DIMSCALE үүрнэ — ингэснээр нэг
+        зурагт хэдэн ч масштаб зэрэг байсан бичээс нь цаасан дээр адилхан
+        гарна.
+        """
+        harits = round(h / HEM_TXT, 2)
+        # Нэрэнд цэг байвал зарим хуучин хувилбар гацдаг тул зураас болгоно.
+        ner = "ХЭМЖЭЭС-" + f"{harits:g}".replace(".", "-")
+        # Тогтмол өндөртэй бичгийн хэв DIMTXT-ыг БҮРЭН дардаг: тэр үед бүх
+        # масштабын хэмжээс ижил хэмжээтэй гарна. Тиймээс хэмжээст зориулж
+        # ХУВЬСАХ өндөртэй (height=0) тусдаа хэв үүсгэнэ — танай бичгийн
+        # хэвийг хөндөхгүй, зөвхөн фонтыг нь зээлнэ.
+        self.dwg.ensure_text_style(HEM_HEV, font=HEM_FONT)
+        self.dwg.ensure_dimstyle(
+            ner, scale=harits, text_style=HEM_HEV, base=HEM_SUURI or None
+        )
+        return ner
+
+    def _hem(
+        self, x0: float, z0: float, x1: float, z1: float, text: str, h: float, *,
+        ergelt: float,
+    ) -> None:
+        """Нэг DIMENSION — офсеттой, тохирох хэвтэйгээр."""
+        self.dwg.dimension(
+            (self.ox + x0, self.oz + z0),
+            (self.ox + x1, self.oz + z1),
+            text=text,
+            rotation=ergelt,
+            dimstyle=self._hem_hev(h),
             layer=lay(L_HEM),
         )
 
+    def hem_bosoo(self, x: float, z0: float, z1: float, text: str, h: float) -> None:
+        """Босоо хэмжээс."""
+        self._hem(x, z0, x, z1, text, h, ergelt=math.pi / 2.0)
+
     def hem_hevtee(self, z: float, x0: float, x1: float, text: str, h: float) -> None:
         """Хэвтээ хэмжээс."""
-        self.shugam(x0, z, x1, z, L_HEM)
-        for x in (x0, x1):
-            self.shugam(x - h * 0.5, z - h * 0.5, x + h * 0.5, z + h * 0.5, L_HEM)
-        self.bichig((x0 + x1) / 2.0, z + h * 0.35, text, h, layer=L_HEM, tov=True)
+        self._hem(x0, z, x1, z, text, h, ergelt=0.0)
 
 
 def _too(v: float) -> str:
