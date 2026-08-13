@@ -105,11 +105,21 @@ def _unshih_lisp() -> list[str]:
         ' (if (not (wcmatch nm "`**"))'
         '  (progn (setq e (cdr (assoc -2 (entget (tblobjname "BLOCK" nm)))) k 0'
         "          xa 1e9 ya 1e9 xb -1e9 yb -1e9)"
-        "   (while e (setq d (entget e) k (1+ k))"
+        "   (while e (setq d (entget e) k (1+ k)"
+        "                  ex 1e9 ey 1e9 fx -1e9 fy -1e9 np 0)"
         "    (foreach g d (if (and (listp (cdr g)) (member (car g) (list 10 11)))"
         "     (progn (setq q (cdr g))"
         "      (setq xa (min xa (car q)) xb (max xb (car q))"
-        "            ya (min ya (cadr q)) yb (max yb (cadr q))))))"
+        "            ya (min ya (cadr q)) yb (max yb (cadr q))"
+        "            ex (min ex (car q)) fx (max fx (car q))"
+        "            ey (min ey (cadr q)) fy (max fy (cadr q)))"
+        "      (if (= (car g) 10) (setq np (1+ np))))))"
+        # Хүрээний блокийн ДОТООД тэгш өнцөгтийг олохын тулд битүү дөрвөлжин
+        # полилинийн хүрээг тусад нь мэдээлнэ. Аль нь зурах талбай болохыг
+        # Python талд шийднэ — тэнд харьцуулах логик бичихэд амархан.
+        '    (if (and (= (cdr (assoc 0 d)) "LWPOLYLINE") (>= np 4) (<= np 5))'
+        f'     (PR (strcat "RECT{SEP}" nm "{SEP}" (R ex) "{SEP}" (R ey) "{SEP}"'
+        '      (R fx) "' + SEP + '" (R fy))))'
         '    (if (= (cdr (assoc 0 d)) "ATTDEF")'
         f'     (PR (strcat "ATT{SEP}" nm "{SEP}" (S (cdr (assoc 2 d))) "{SEP}"'
         f'      (R (car (cdr (assoc 10 d)))) "{SEP}" (R (cadr (cdr (assoc 10 d)))) "{SEP}"'
@@ -196,6 +206,12 @@ def unshih(dwg: Path) -> dict:
             atts.setdefault(r[0], []).append(
                 {"tag": r[1], "x": _bod(r[2]), "y": _bod(r[3]), "h": _bod(r[4])}
             )
+    rects: dict[str, list[tuple[float, float, float, float]]] = {}
+    for r in _mor(text, "RECT"):
+        if len(r) >= 5:
+            rects.setdefault(r[0], []).append(
+                (_bod(r[1]), _bod(r[2]), _bod(r[3]), _bod(r[4]))
+            )
     return {
         "esh": str(dwg),
         "insunits": _neg(text, "INSUNITS"),
@@ -225,6 +241,7 @@ def unshih(dwg: Path) -> dict:
                 "x0": _bod(r[5]) if len(r) > 5 else 0.0,
                 "y0": _bod(r[6]) if len(r) > 6 else 0.0,
                 "att": atts.get(r[0], []),
+                "rect": rects.get(r[0], []),
             }
             for r in _mor(text, "BLOCK")
             if len(r) >= 3
@@ -326,11 +343,25 @@ TSAAS_HEMJEE: dict[str, tuple[float, float]] = {
 }
 
 
-def huree_taah(block: list[dict], tsaas: str = "A3") -> str:
-    """Цаасны хүрээний блокийг ХЭМЖЭЭГЭЭР нь таана.
+#: Дотоод хүрээ нь цаасны талбайн энэ хувиас багагүйг эзэлнэ. Үүнээс жижиг
+#: тэгш өнцөгт бол хүрээ биш — штампын нүд, лого, бүсийн тэмдэг.
+DOTOR_HAMGIIN_BAGA = 0.70
+
+#: Индекс өнгө үүнээс дээш бол цагаан дэвсгэр дээр бараг харагдахгүй.
+ONGO_TSAGAAN = 250
+
+
+def huree_taah(block: list[dict], tsaas: str = "A3") -> dict:
+    """Цаасны хүрээний блок ба түүний ЗУРАХ ТАЛБАЙГ таана.
 
     Нэрээр таах найдваргүй — нэг зурагт "...A3" гэсэн хэд хэдэн блок
     байж болно; харин 420x297 гэсэн хэмжээ эргэлзээ төрүүлэхгүй.
+
+    ХАМГИЙН ЧУХАЛ НЬ ДОТООД ХҮРЭЭ. Хүрээний блок нь ихэвчлэн үүрлэсэн хэд
+    хэдэн тэгш өнцөгтөөс тогтоно: цаасны ирмэг, бүсийн зурвас, дараа нь
+    зурах талбай. Зөвхөн гадна хэмжээг мэдээд захын зайг таамаглавал бичээс
+    хүрээгээр давж гардаг. Тиймээс битүү дөрвөлжингүүдээс хамгийн ЖИЖИГ
+    боловч цаасыг бараг бүтэн эзэлж байгааг нь сонгоно.
     """
     hus_u, hus_o = TSAAS_HEMJEE.get(tsaas, TSAAS_HEMJEE["A3"])
     nert = [
@@ -338,10 +369,31 @@ def huree_taah(block: list[dict], tsaas: str = "A3") -> str:
         if abs(b.get("urgun", 0.0) - hus_u) <= 2.0 and abs(b.get("undur", 0.0) - hus_o) <= 2.0
     ]
     if not nert:
-        return ""
+        return {}
     # Эх цэг нь зүүн доод буланд байгаа нь тавихад хамгийн энгийн.
     nert.sort(key=lambda b: (abs(b.get("x0", 0.0)) + abs(b.get("y0", 0.0)), -b["orsonoo"]))
-    return nert[0]["ner"]
+    b = nert[0]
+    return {
+        "ner": b["ner"],
+        "urgun": b.get("urgun", hus_u),
+        "undur": b.get("undur", hus_o),
+        "x0": b.get("x0", 0.0),
+        "y0": b.get("y0", 0.0),
+        "dotor": list(_dotor_huree(b.get("rect", []), hus_u * hus_o)),
+    }
+
+
+def _dotor_huree(
+    rect: list[tuple[float, float, float, float]], talbai: float
+) -> tuple[float, float, float, float] | tuple[()]:
+    """Үүрлэсэн тэгш өнцөгтүүдээс зурах талбайг сонгоно (олдохгүй бол хоосон)."""
+    tohirson = [
+        r for r in rect
+        if (r[2] - r[0]) * (r[3] - r[1]) >= talbai * DOTOR_HAMGIIN_BAGA
+    ]
+    if not tohirson:
+        return ()
+    return min(tohirson, key=lambda r: (r[2] - r[0]) * (r[3] - r[1]))
 
 
 #: Булангийн хүснэгтийн боломжит хэмжээ, мм (ГОСТ 2.104 маягийн штамп).
@@ -383,6 +435,7 @@ def holboh(dwg: Path, out: Path = ZAGVAR) -> dict:
     """DWG-ийг уншаад `zagvar.json` бичнэ — давхаргын холбоос, бичгийн хэв."""
     medee = unshih(dwg)
     tanisan = taah(medee["davharga"], medee.get("clayer", ""))
+    huree = huree_taah(medee["block"])
     zagvar = {
         "_тайлбар": (
             "Бидний дотоод үүрэг → танай давхаргын нэр. Гараар засаж болно. "
@@ -392,7 +445,10 @@ def holboh(dwg: Path, out: Path = ZAGVAR) -> dict:
         "esh": str(dwg),
         "uram": "",
         "bichgiin_hev": bichgiin_hev(medee),
-        "huree_block": huree_taah(medee["block"]),
+        # `huree_block` нь зөвхөн нэр — хуучин тохиргоотой нийцүүлэхийн тулд
+        # үлдээв. Байрлал тооцоход `huree.dotor` хэрэгтэй.
+        "huree_block": huree.get("ner", ""),
+        "huree": huree,
         "shtamp": shtamp_taah(medee["block"]),
         "hunii_ner": {"inzhener": "", "zursan": "", "shalgasan": ""},
         "holbolt": {u: tanisan.get(u, "") for u in UUREG},
@@ -448,6 +504,15 @@ def uram(dwg: Path, out: Path) -> Path:
 
     PURGE ХИЙХГҮЙ: purge нь ашиглагдаагүй блокийг устгачихна — харин бидэнд
     яг тэдгээр (штамп, тэмдэглэгээ) хэрэгтэй.
+
+    ҮЛ ҮЗЭГДЭХ ДАВХАРГЫГ ХАРАГДУУЛНА. Индекс өнгө 250-255 нь бараг цагаан.
+    Тохиолдож байсан жишээ: АЗ хүрээ бүхэлдээ нэг давхарга дээр, өнгө нь 255 —
+    цагаан
+    дэвсгэр дээр хүрээ ОГТ харагдахгүй. Танай зурагт энэ нь асуудал биш
+    (монохром CTB-ээр хар хэвлэгдэнэ), гэхдээ шинээр үүсгэсэн хуудсыг нээхэд
+    хоосон харагдана. Тиймээс ҮРЛЭГ дотор л өнгийг 7 болгоно — танай эх зураг
+    хөндөгдөхгүй, мөн энэ хуудсыг танай төсөлд оруулбал тэндхийн давхарга
+    давамгайлах тул стандарт тань бохирдохгүй.
     """
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(dwg.read_bytes())
@@ -462,6 +527,14 @@ def uram(dwg: Path, out: Path) -> Path:
         f'(PR (strcat "BAIGAA{SEP}" (if ss (itoa (sslength ss)) "0")))',
         '(if ss (command "_.ERASE" ss ""))',
         DRAIN,
+        # Бараг цагаан давхаргыг харагдуулна.
+        '(setq L (tblnext "LAYER" T))',
+        "(while L (setq nm (cdr (assoc 2 L)) c (abs (cdr (assoc 62 L))))"
+        f" (if (>= c {ONGO_TSAGAAN})"
+        f'  (progn (PR (strcat "ONGO{SEP}" nm "{SEP}" (itoa c)))'
+        '   (command "_.-LAYER" "_C" "7" nm "")))'
+        ' (setq L (tblnext "LAYER")))',
+        DRAIN,
         '(setq ss2 (ssget "_X"))',
         f'(PR (strcat "ULDSEN{SEP}" (if ss2 (itoa (sslength ss2)) "0")))',
         f'(command "_.SAVEAS" "2018" "{out.as_posix()}")',
@@ -474,6 +547,8 @@ def uram(dwg: Path, out: Path) -> Path:
         msg = "Үрлэг зураг бэлдэж чадсангүй — AutoCAD дуусгасангүй"
         raise RuntimeError(msg)
     print(f"  устгасан entity: {_neg(text, 'BAIGAA')}  үлдсэн: {_neg(text, 'ULDSEN')}")
+    for r in _mor(text, "ONGO"):
+        print(f"  үл үзэгдэх давхарга харагдууллаа: {r[0]} (өнгө {r[1]} -> 7)")
     return out
 
 
@@ -498,6 +573,12 @@ def main(argv: list[str]) -> int:
         print(f"{ZAGVAR} бичигдлээ")
         print(f"  бичгийн хэв: {z['bichgiin_hev']}")
         print(f"  хүрээний блок: {z['huree_block'] or '(олдсонгүй)'}")
+        dotor = (z.get("huree") or {}).get("dotor") or []
+        if len(dotor) == 4:
+            print(f"    зурах талбай: x {dotor[0]:.0f}..{dotor[2]:.0f}  "
+                  f"y {dotor[1]:.0f}..{dotor[3]:.0f} мм")
+        elif z["huree_block"]:
+            print("    зурах талбай олдсонгүй — өгөгдмөл захын зай хэрэглэнэ")
         sh = z["shtamp"]
         if sh:
             print(f"  булангийн хүснэгт: {sh['ner']}  "

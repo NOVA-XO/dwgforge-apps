@@ -115,6 +115,28 @@ DAVHARGA: tuple[tuple[str, int], ...] = (
 BAGA_ORGON = 0.30  # м, биеийн хамгийн нарийн өргөн
 SHON_ORGON = 0.56  # м, төмөр бетон стойкийн диаметр (СК цуврал)
 
+# --------------------------------------------------------------------------
+# Хийцийн пропорц — серия 3.407.2-170.2 06КМ «Геометрическая схема» (1П110-2)
+# ба ЭСП каталогийн эскизээс (лист 18, 23) хэмжсэн.
+#
+# ЭСП каталог нь СИЛУЭТ л өгдөг: раскос, ферм зурдаггүй. Тиймээс сүлжээний
+# пропорцыг ажлын зургийн цомгоос авав. Гишүүн бүрийг хуулаагүй — зөвхөн
+# хэмжээ тогтоох дүрмүүдийг авсан:
+#
+#   * Панелийн өндөр нь өргөнөөс хамаардаггүй, ТОГТМОЛ модультай. 06КМ дээр
+#     бие нь 2200 мм-ийн панелиар дээшилж, хугарлын дээр 1800 болдог.
+#   * Бие нь нэг шулуун нарийсалт БИШ — «линия гиба» дээр хугарч, дээшээ
+#     бараг зэрэгцээ нарийн иш болно (огтлол 1-1: 3060, 2-2: 2197, 11-11: 350).
+#   * Тросостойк нь ишний өргөнөөсөө оройд нийлдэг нарийн жад.
+# --------------------------------------------------------------------------
+
+PANEL_BIE = 2.2  # м, хугарлаас доош биеийн панелийн модуль (06КМ: 2200)
+PANEL_ISH = 1.8  # м, хугарлаас дээш ишний панель (06КМ: 1800)
+ISH_HARTSAA = 0.30  # ишний өргөн = суурийн өргөний хувь
+TOR_UNDUR = 0.55  # м, траверсын үндэсний өндөр
+TOR_UZUUR = 0.14  # м, траверсын үзүүрийн өндөр
+TOR_ULGUUR = 0.35  # м, утас өлгөх цэгийн урт
+
 
 def _lerp(a: float, b: float, t: float) -> float:
     return a + (b - a) * max(0.0, min(1.0, t))
@@ -151,6 +173,10 @@ class Zurag:
         self.dwg.polyline(
             [(self.ox + x, self.oz + z) for x, z in tsegs], closed=hulhii, layer=lay(layer)
         )
+
+    def toirog(self, x: float, z: float, r: float, layer: str = L_BICHIG) -> None:
+        """Тойрог. Офсеттой — `zam`, `shugam`-тай нэг координатын системд байна."""
+        self.dwg.circle((self.ox + x, self.oz + z), r, layer=lay(layer))
 
     def bichig(
         self,
@@ -209,41 +235,100 @@ def _too(v: float) -> str:
 # --------------------------------------------------------------------------
 
 
+def _gib(t: Tulguur) -> float:
+    """«Линия гиба» — биеийн налалт хугарах өндөр (м).
+
+    Доод траверсын түвшин. ЭСП эскиз ба 06КМ хоёулаа энд хугарлыг харуулдаг:
+    доор нь салаавчилсан бие, дээр нь нарийн иш.
+    """
+    return max(min(t.dood, t.undur), 0.1)
+
+
+def _ish_hagas(t: Tulguur) -> float:
+    """Хугарлаас дээших ишний ХАГАС өргөн (м)."""
+    return max(t.suuri * ISH_HARTSAA, t.orgil, BAGA_ORGON) / 2.0
+
+
 def _orgon(t: Tulguur, z: float) -> float:
-    """Биеийн ХАГАС өргөн `z` өндөрт (м)."""
-    doosh = max(t.dood, 1e-6)
-    deed = max(t.orgil / 2.0, BAGA_ORGON / 2.0)
-    doorh = max(t.suuri / 2.0, deed)
-    return _lerp(doorh, deed, z / doosh) if z < doosh else deed
+    """Биеийн ХАГАС өргөн `z` өндөрт (м) — хугарлын шугамаар хоёр хэсэг."""
+    gib = _gib(t)
+    ish = _ish_hagas(t)
+    doorh = max(t.suuri / 2.0, ish)
+    orgil = min(max(t.orgil / 2.0, BAGA_ORGON / 2.0), ish)
+    if z <= gib:
+        return _lerp(doorh, ish, z / gib)
+    return _lerp(ish, orgil, (z - gib) / max(t.undur - gib, 1e-6))
+
+
+def _tuvshin(z0: float, z1: float, modul: float) -> list[float]:
+    """`z0`..`z1`-ийг `modul`-д хамгийн ойр тэнцүү панель болгон хуваана.
+
+    Жинхэнэ тулгуурын панель нь тогтмол модультай (06КМ: 2200 / 1800), тэр
+    модуль нь хэрчмийн урттай яг таардаггүй тул хамгийн ойр бүхэл тоонд
+    хуваана — панелиуд тэнцүү, зангилаанууд нь хэрчмийн үзүүрт яг тохирно.
+    """
+    urt = z1 - z0
+    if urt <= 1e-6:
+        return [z0]
+    n = max(1, round(urt / modul))
+    return [z0 + urt * i / n for i in range(n + 1)]
+
+
+def _suljee_zurah(z: Zurag, t: Tulguur, tuvshin: list[float]) -> None:
+    """Өгсөн түвшингүүдийн хооронд X раскос ба хөндлөвч татна."""
+    for i in range(len(tuvshin) - 1):
+        za, zb = tuvshin[i], tuvshin[i + 1]
+        a0, a1 = _orgon(t, za), _orgon(t, zb)
+        z.shugam(-a1, zb, a1, zb, L_SUL)
+        z.shugam(-a0, za, a1, zb, L_SUL)
+        z.shugam(a0, za, -a1, zb, L_SUL)
 
 
 def _bie_suljee(z: Zurag, t: Tulguur, deed: float) -> None:
-    """Нарийсдаг сүлжээн бие: хоёр тавцан, хөндлөвч, X холбоос."""
-    z.zam([(-_orgon(t, 0.0), 0.0), (-_orgon(t, deed), deed)], L_BIE)
-    z.zam([(_orgon(t, 0.0), 0.0), (_orgon(t, deed), deed)], L_BIE)
-
-    # Панелийн өндөр нь тухайн газрын өргөнтэй ойролцоо — жинхэнэ тулгуур ч ийм.
-    z0 = 0.0
-    hyzgaar = 0
-    while z0 < deed - 1e-6 and hyzgaar < 40:
-        hyzgaar += 1
-        panel = max(1.2, min(2.2 * _orgon(t, z0), deed / 4.0))
-        z1 = min(z0 + panel, deed)
-        a0, a1 = _orgon(t, z0), _orgon(t, z1)
-        z.shugam(-a1, z1, a1, z1, L_SUL)
-        z.shugam(-a0, z0, a1, z1, L_SUL)
-        z.shugam(a0, z0, -a1, z1, L_SUL)
-        z0 = z1
+    """Сүлжээн бие: хугарлын шугамтай хоёр тавцан, тогтмол модультай раскос."""
+    gib = min(_gib(t), deed)
+    # Хөл нь хугарлаар дамжина — ганц шулуун биш, хугарсан шугам.
+    for tal in (-1.0, 1.0):
+        z.zam(
+            [
+                (tal * _orgon(t, 0.0), 0.0),
+                (tal * _orgon(t, gib), gib),
+                (tal * _orgon(t, deed), deed),
+            ],
+            L_BIE,
+        )
+    # Хугарлаас доош бүдүүн модуль, дээш нарийн — 06КМ-ийн 2200/1800.
+    _suljee_zurah(z, t, _tuvshin(0.0, gib, PANEL_BIE))
+    if deed > gib + 1e-6:
+        _suljee_zurah(z, t, _tuvshin(gib, deed, PANEL_ISH))
+        # Хугарлын диафрагм
+        z.shugam(-_orgon(t, gib), gib, _orgon(t, gib), gib, L_SUL)
 
 
 def _bie_shon(z: Zurag, t: Tulguur, deed: float) -> None:
-    """Төмөр бетон шон: тогтмол зузаантай, үений зураастай."""
-    a = SHON_ORGON / 2.0 if t.material == JB else max(t.orgil / 2.0, BAGA_ORGON / 2.0)
+    """Тогтмол огтлолтой бие: төмөр бетон шон, эсвэл ган сүлжээн мачт.
+
+    Хоёулаа зэрэгцээ хажуутай ч ДОТООД нь өөр: шон бол цул, зөвхөн угсралтын
+    үений зураастай; оттяжкатай ган мачт бол сүлжээн ферм тул раскостой.
+    Өмнө нь хоёуланг нь цулаар зурдаг байсан — П110-7 мэт ган мачт бетон
+    шон шиг харагддаг байв.
+    """
+    if t.material == JB:
+        a = SHON_ORGON / 2.0
+        z.zam([(-a, 0.0), (-a, deed), (a, deed), (a, 0.0)], L_BIE)
+        n = max(1, int(deed // 6.0))
+        for i in range(1, n + 1):
+            zz = deed * i / (n + 1)
+            z.shugam(-a, zz, a, zz, L_SUL)
+        return
+    a = max(t.orgil / 2.0, BAGA_ORGON / 2.0)
     z.zam([(-a, 0.0), (-a, deed), (a, deed), (a, 0.0)], L_BIE)
-    n = max(1, int(deed // 6.0))
-    for i in range(1, n + 1):
-        zz = deed * i / (n + 1)
-        z.shugam(-a, zz, a, zz, L_SUL)
+    tuvshin = _tuvshin(0.0, deed, PANEL_ISH)
+    for i in range(len(tuvshin) - 1):
+        za, zb = tuvshin[i], tuvshin[i + 1]
+        z.shugam(-a, zb, a, zb, L_SUL)
+        z.shugam(-a, za, a, zb, L_SUL)
+        z.shugam(a, za, -a, zb, L_SUL)
 
 
 def _tor_zurah(z: Zurag, t: Tulguur, x_tov: float = 0.0, bie_hagas: float | None = None) -> None:
@@ -259,24 +344,50 @@ def _tor_zurah(z: Zurag, t: Tulguur, x_tov: float = 0.0, bie_hagas: float | None
                 continue
             uzuur = x_tov + tal * urt
             ex = x_tov + tal * a
-            deesh = min(0.35 * urt, 1.6)
+            # Траверс нь нимгэн шугам биш ТРАПЕЦ: доод татуурга хэвтээ, дээд
+            # татуурга үндэснээсээ үзүүр рүү налж бууна (ЭСП эскиз, 06КМ).
+            h_ug = min(TOR_UNDUR, urt * 0.40)
+            h_uz = min(TOR_UZUUR, h_ug * 0.45)
             z.shugam(ex, tor.z, uzuur, tor.z, L_TOR)
-            z.shugam(uzuur, tor.z, x_tov + tal * a * 0.9, tor.z - deesh, L_TOR)
-            # утас өлгөх цэг
-            z.shugam(uzuur, tor.z, uzuur, tor.z - deesh * 0.45, L_TOR)
+            z.shugam(ex, tor.z + h_ug, uzuur, tor.z + h_uz, L_TOR)
+            z.shugam(ex, tor.z, ex, tor.z + h_ug, L_TOR)
+            z.shugam(uzuur, tor.z, uzuur, tor.z + h_uz, L_TOR)
+            # Доторх зигзаг раскос
+            n = max(2, round((urt - a) / 1.1))
+            for i in range(n):
+                xa = _lerp(ex, uzuur, i / n)
+                xb = _lerp(ex, uzuur, (i + 1) / n)
+                za = _lerp(tor.z + h_ug, tor.z + h_uz, i / n)
+                zb = _lerp(tor.z + h_ug, tor.z + h_uz, (i + 1) / n)
+                z.shugam(xa if i % 2 else xb, tor.z, xb if i % 2 else xa, zb if i % 2 else za,
+                         L_TOR)
+            # Утас өлгөх цэг — доод татуургаас доош
+            z.shugam(uzuur, tor.z, uzuur, tor.z - TOR_ULGUUR, L_TOR)
 
 
 def _uzuur_zurah(z: Zurag, t: Tulguur, z_deed: float) -> None:
-    """Тросостойк(ууд): биеийн оройноос дээш нарийн гурвалжин."""
+    """Тросостойк(ууд): ишний өргөнөөс оройд нийлэх нарийн сүлжээн жад.
+
+    Өмнө нь тогтмол 0.45 м суурьтай гурвалжин байсан. Жинхэнэ тросостойк нь
+    ишнийхээ өргөнөөс эхэлж (06КМ: 605 мм, огтлол 11-11: 350×350) оройд
+    нийлдэг — тиймээс суурийг нь ишнээс тооцно.
+    """
     if t.uzuur <= 0 or t.undur <= z_deed + 0.05:
         return
     a = _orgon(t, z_deed)
-    ug = 0.45 if t.uzuur == 1 else max(a * 0.8, 0.6)
-    for tal in ((0.0,) if t.uzuur == 1 else (-a * 0.75, a * 0.75)):
-        z.zam(
-            [(tal - ug / 2.0, z_deed), (tal, t.undur), (tal + ug / 2.0, z_deed)],
-            L_TROS,
-        )
+    ug = a if t.uzuur == 1 else max(a * 0.45, 0.18)
+    for tov in (0.0,) if t.uzuur == 1 else (-a * 0.75, a * 0.75):
+        z.zam([(tov - ug, z_deed), (tov, t.undur)], L_TROS)
+        z.zam([(tov + ug, z_deed), (tov, t.undur)], L_TROS)
+        # Доторх раскос — ишийнхтэй ижил модулиар
+        tuvshin = _tuvshin(z_deed, t.undur, PANEL_ISH)
+        for i in range(len(tuvshin) - 1):
+            za, zb = tuvshin[i], tuvshin[i + 1]
+            wa = ug * (t.undur - za) / max(t.undur - z_deed, 1e-6)
+            wb = ug * (t.undur - zb) / max(t.undur - z_deed, 1e-6)
+            z.shugam(tov - wb, zb, tov + wb, zb, L_TROS)
+            z.shugam(tov - wa, za, tov + wb, zb, L_TROS)
+            z.shugam(tov + wa, za, tov - wb, zb, L_TROS)
 
 
 def _tatlaga_zurah(z: Zurag, t: Tulguur, z_baril: float) -> None:

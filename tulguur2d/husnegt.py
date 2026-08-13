@@ -1,13 +1,29 @@
-r"""АЗ хуудас угсрах — танай "ТОНОГЛОЛЫН ТЕХНИКИЙН ҮЗҮҮЛЭЛТ" зургийн бүтцээр.
+r"""АЗ хуудас угсрах — танай "нэг маягийн зураг"-ийн бүтцээр.
 
-Багана бүр нэг тулгуур, дөрвөн мөртэй:
+Танай нэг маягийн зургийн багцад ХОЁР өөр хуудас байдаг. Энэ модуль хоёуланг
+нь гаргана:
 
-    ПЛАН      маршрутын шугам + тэмдэг (анкер ▽ / дундын ○) + ПК00+00
-    ШИФР      тулгуурын шифр
-    ӨНДӨРЛӨГ  урдаас харсан эскиз, хэмжээстэй
-    СУУРЬ     фундаментын план (тэнхлэг, хөлийн байрлал, суурийн өргөн)
+`Husnegt` — ТЭМДЭГЛЭГЭЭНИЙ хуудас. Зүүн талд шошгын багана, баруун тийш
+тулгуур бүр нэг багана. Мөрүүд нь дээрээс доош:
 
-Баганууд нь АНКЕР / ДУНДЫН гэж бүлэглэгдэж, дээр нь бүлгийн гарчиг гарна.
+    ТУЛГУУР БАЙГУУЛАЛТЫН ДЭЭРХ ТЭМДЭГЛЭГЭЭ   план: шугам + ▽/○ + ПК00+00
+    ТУЛГУУРЫН МАРК                            шифр
+    ТУЛГУУРЫН ЗАГВАР                          урдаас харсан эскиз, хэмжээстэй
+    СУУРИЛУУЛАЛТЫН СХЕМ                       фундаментын план
+    МАТЕРИАЛ · ТРАВЕРС · МАСС · ТОО ШИРХЭГ    богино мөрүүд
+
+Баганууд ДУНДЫН / АНКЕР гэж бүлэглэгдэж, дээр нь бүлгийн гарчиг гарна.
+Доод зүүн буланд тэмдэглэгээний тайлбар.
+
+`Huudas` — НЭГ ТУЛГУУРЫН хуудас. Дээр нь гарчиг ("<шифр> МАЯГИЙН <ангилал>
+ТУЛГУУР" + масштаб), зүүн талд өндөрлөг ба суурийн план, баруун талд тайлбар
+ба МАТЕРИАЛЫН ТҮҮВЭР, доор нь булангийн хүснэгт.
+
+ТАНАЙ СТАНДАРТААС ЮУГ ӨӨРЧИЛСӨН БЭ. Тэмдэглэгээний хуудасны "ШОНГИЙН МАРК",
+"ХӨНДЛӨВЧ", "ХЭРЭГЛЭГДЭХ ХҮРЭЭ" гурван мөрийг ЭСП каталог бөглөж чадахгүй —
+тэнд шонгийн марк ч, хийцийн жагсаалт ч байхгүй. Мөрийн байрыг хоосон
+үлдээхийн оронд каталогийн МЭДДЭГ зүйлээр сольсон: МАТЕРИАЛ, ТРАВЕРС, МАСС.
+"ТОО ШИРХЭГ" хэвээрээ, төслөөр бөглөгдөнө.
 
 МАСШТАБ. Зураг нь МОДЕЛЬ орчинд МЕТРЭЭР 1:1 зурагдана — хэмжээсийн тоо
 каталогийн утгатай яг таарна. Харин хүрээ, бичээс нь цаасны мм-ээр өгөгдөж,
@@ -59,7 +75,7 @@ from zurag import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
 # -- цаасны хэмжээ, мм -------------------------------------------------------
 
@@ -73,12 +89,14 @@ TSAAS: dict[str, tuple[float, float]] = {
 ZAH_ZUUN = 20.0  # мм, зүүн зах (үдэлт)
 ZAH = 5.0  # мм, бусад зах
 
-# Хуудасны мөрүүдийн өндөр, мм. Нийлбэр нь хүрээний өндрөөс бага байна.
-MOR_GARCHIG = 8.0
-MOR_PLAN = 52.0
-MOR_NER = 8.0
-MOR_SUURI = 34.0
-# Өндөрлөгийн мөр нь үлдсэн зайг бүхэлд нь эзэлнэ.
+# Тэмдэглэгээний хуудасны мөрийн өндөр, мм. Нийлбэр нь хүрээнээс бага байна.
+SHOSHGO_URGUN = 34.0  # зүүн талын шошгын багана
+MOR_GARCHIG = 7.0
+MOR_PLAN = 46.0
+MOR_NER = 6.0
+MOR_SUURI = 26.0
+MOR_JIJIG = 5.5  # доод дөрвөн богино мөр тус бүр
+# Өндөрлөгийн ("ТУЛГУУРЫН ЗАГВАР") мөр нь үлдсэн зайг бүхэлд нь эзэлнэ.
 
 # Булангийн хүснэгтийн нүдэнд үлдээх зай, мм. Ихэнх штампын эх цэг нь
 # баруун доод буланд байдаг тул хүрээний булан руу шууд тавина;
@@ -95,6 +113,71 @@ H_NER = 3.5
 H_HEM = 2.0
 H_PK = 2.0
 H_TAILBAR = 2.5
+H_SHOSHGO = 2.5  # тэмдэглэгээний хуудасны зүүн шошгын багана
+
+#: Доод богино мөрүүдийн шошго. Танай хуудасны ШОНГИЙН МАРК / ХӨНДЛӨВЧ /
+#: ХЭРЭГЛЭГДЭХ ХҮРЭЭ гурвыг ЭСП каталог бөглөж чадахгүй тул каталогийн
+#: мэддэг зүйлээр сольсон (модулийн толгойг үз).
+JIJIG_MOR: tuple[str, ...] = ("МАТЕРИАЛ", "ТРАВЕРС", "МАСС, кг", "ТОО ШИРХЭГ")
+
+#: Тэмдэглэгээний хуудасны өндөр мөрүүдийн шошго — босоо бичигдэнэ.
+SHOSHGO_PLAN = "ТУЛГУУР БАЙГУУЛАЛТЫН ДЭЭРХ ТЭМДЭГЛЭГЭЭ"
+SHOSHGO_NER = "ТУЛГУУРЫН МАРК"
+SHOSHGO_ZAGVAR = "ТУЛГУУРЫН ЗАГВАР"
+SHOSHGO_SUURI = "СУУРИЛУУЛАЛТЫН СХЕМ"
+
+# --------------------------------------------------------------------------
+# Хуудасны блок, булангийн хүснэгт, хүний нэр — БҮГД `zagvar.json`-оос ирнэ.
+# Эх кодод бичихгүй: тэдгээр нь тодорхой нэг захиалагчийн зургийн блокийн нэр,
+# ажилтны нэр бөгөөд энэ repo нээлттэй. Байхгүй бол хуудас өөрийн хүрээтэйгээр,
+# штампгүй гарна.
+# --------------------------------------------------------------------------
+
+_SHTAMP: dict = ZAGVAR.get("shtamp") or {}
+
+#: Булангийн хүснэгтийн блокийн нэр (`zagvar.py holboh` атрибутаар нь таана).
+SHTAMP_BLOCK: str = str(_SHTAMP.get("ner") or "")
+
+#: Атрибутын байрлал (блокийн эх цэгээс, мм) ба өндөр: (tag, x, y, h).
+SHTAMP_ATT: tuple[tuple[str, float, float, float], ...] = tuple(
+    (str(a[0]), float(a[1]), float(a[2]), float(a[3]))
+    for a in _SHTAMP.get("att", [])
+    if len(a) >= 4
+)
+
+_HUN: dict = ZAGVAR.get("hunii_ner") or {}
+INZHENER: str = str(_HUN.get("inzhener") or "")
+ZURSAN: str = str(_HUN.get("zursan") or "") or INZHENER
+SHALGASAN: str = str(_HUN.get("shalgasan") or "")
+
+#: Цаасны хүрээний блок (хэмжээгээр нь танисан).
+_HUREE: dict = ZAGVAR.get("huree") or {}
+A3_BLOCK: str = str(_HUREE.get("ner") or ZAGVAR.get("huree_block") or "")
+
+#: Танай хүрээний ЗУРАХ ТАЛБАЙ (x0, y0, x1, y1), цаасны мм.
+#:
+#: Үүнийг таамаглаж болохгүй. Жишээ нь нэг АЗ блок гурван үүрлэсэн тэгш өнцөгттэй —
+#: 0..420 (цаасны ирмэг), 15..415 (бүсийн зурвас), 20..410 x 10..287 (зурах
+#: талбай). "5 мм зах" гэж таамаглавал гарчиг дээд хүрээгээр давж, баруун
+#: багана хүрээнээс гарна. Блок дотроос хэмжсэн утга байвал түүнийг ашиглана.
+_DOTOR = _HUREE.get("dotor") or []
+HUREE_DOTOR: tuple[float, float, float, float] | None = (
+    (float(_DOTOR[0]), float(_DOTOR[1]), float(_DOTOR[2]), float(_DOTOR[3]))
+    if len(_DOTOR) == 4
+    else None
+)
+
+
+def dotor_huree(tsaas: str, huree_block: str) -> tuple[float, float, float, float]:
+    """Зурах талбайн хил (x0, y0, x1, y1), цаасны мм.
+
+    Танай блокийг хэрэглэж байгаа бол ТҮҮНЭЭС хэмжсэн талбай, эс бөгөөс
+    өгөгдмөл захын зай.
+    """
+    if huree_block and HUREE_DOTOR is not None:
+        return HUREE_DOTOR
+    u, o = TSAAS.get(tsaas, TSAAS["A3"])
+    return ZAH_ZUUN, ZAH, u - ZAH, o - ZAH
 
 
 def masshtab_songoh(bag: Sequence[Tulguur], urgun_mm: float, undur_mm: float) -> int:
@@ -119,32 +202,52 @@ class Husnegt:
         *,
         tsaas: str = "A3",
         masshtab: int | None = None,
-        garchig: str = "ТОНОГЛОЛЫН ТЕХНИКИЙН ҮЗҮҮЛЭЛТ",
-        shtamp: str = "",
+        garchig: str = "ТУЛГУУР БАЙГУУЛАЛТЫН ТЭМДЭГЛЭГЭЭ БА ТУЛГУУРЫН ХЭМЖЭЭС",
+        shtamp: str = SHTAMP_BLOCK,
+        huree_block: str = "",
+        tosol: str = "",
+        ognoo: str = "",
+        shifr_zurag: str = "",
     ) -> None:
         """Хуудасны хэмжээ, масштаб, баганын өргөнийг тооцно."""
         self.bag = list(bag)
         self.garchig = garchig
         self.shtamp = shtamp
+        self.tosol = tosol
+        self.ognoo = ognoo
+        self.shifr_zurag = shifr_zurag
         self.tsaas_urgun, self.tsaas_undur = TSAAS.get(tsaas, TSAAS["A3"])
+        # Танай хүрээний блок нь АЗ-ынх. Том цаасанд түүнийг тавьбал хэмжээ
+        # зөрөх тул зөвхөн АЗ дээр хэрэглэнэ.
+        self.huree_block = huree_block if tsaas == "A3" else ""
 
-        # Хүрээний дотор талын хэмжээ, мм
-        self.x0 = ZAH_ZUUN
-        self.x1 = self.tsaas_urgun - ZAH
-        self.y0 = ZAH
-        self.y1 = self.tsaas_undur - ZAH
+        # Хүрээний дотор талын хэмжээ, мм — танай блокоос хэмжсэн
+        self.x0, self.y0, self.x1, self.y1 = dotor_huree(tsaas, self.huree_block)
 
-        # Хүснэгтийн талбай — штампын дээр
+        # Хүснэгтийн талбай — штампын дээр. Зүүн талд шошгын багана үлдэнэ.
+        self.t_x0 = self.x0 + SHOSHGO_URGUN
         self.t_y0 = self.y0 + SHTAMP_UNDUR
         self.t_y1 = self.y1
         self.bagana_too = max(1, len(self.bag))
-        self.bagana_urgun = (self.x1 - self.x0) / self.bagana_too
+        self.bagana_urgun = (self.x1 - self.t_x0) / self.bagana_too
 
-        mor_urd = (self.t_y1 - self.t_y0) - MOR_GARCHIG - MOR_PLAN - MOR_NER - MOR_SUURI
-        self.mor_urd = max(mor_urd, 40.0)
+        jijig = MOR_JIJIG * len(JIJIG_MOR)
+        bolomj = (self.t_y1 - self.t_y0) - MOR_GARCHIG - MOR_PLAN - MOR_NER - MOR_SUURI - jijig
+        bolomj = max(bolomj, 40.0)
+        self.mor_urd = bolomj
         self.masshtab = masshtab or masshtab_songoh(
-            self.bag, self.bagana_urgun * 0.92, self.mor_urd * 0.88
+            self.bag, self.bagana_urgun * 0.92, bolomj * 0.88
         )
+        # Хоёр дахь дамжлага. Өргөн нь масштабыг тогтоосон бол (өргөн тулгуур,
+        # оттяжкатай, олон багана) хамгийн өндөр тулгуур мөрөндөө багтаад
+        # дээрээ асар их хоосон зай үлдээдэг. Мөрийг хэрэгцээнд нь тааруулаад
+        # ИЛҮҮДЛИЙГ АЛГА БОЛГОХГҮЙ — план ба суурийн мөрөнд хуваарилна. Эс
+        # тэгвээс хүснэгт хүрээндээ хүрэхгүй, доор нь хоосон нүд үлдэнэ.
+        heregtei = max((t.undur for t in self.bag), default=0.0) * 1000.0 / self.masshtab + 10.0
+        self.mor_urd = max(min(bolomj, heregtei), 40.0)
+        iluu = bolomj - self.mor_urd
+        self.mor_plan = MOR_PLAN + iluu * 0.45
+        self.mor_suuri = MOR_SUURI + iluu * 0.55
 
         self.dwg = Drawing(options=DrawingOptions(dwg_format="2018"))
         self.z = Zurag(self.dwg)
@@ -166,7 +269,7 @@ class Husnegt:
     def y_plan(self) -> tuple[float, float]:
         """Планы тэмдгийн мөр."""
         deed = self.y_garchig[0]
-        return deed - MOR_PLAN, deed
+        return deed - self.mor_plan, deed
 
     @property
     def y_ner(self) -> tuple[float, float]:
@@ -184,11 +287,16 @@ class Husnegt:
     def y_suuri(self) -> tuple[float, float]:
         """Фундаментын планы мөр."""
         deed = self.y_urd[0]
-        return self.t_y0, deed
+        return deed - self.mor_suuri, deed
+
+    def y_jijig(self, k: int) -> tuple[float, float]:
+        """`k` дугаар богино мөрийн доод, дээд хил (мм) — дээрээс доош."""
+        deed = self.y_suuri[0] - k * MOR_JIJIG
+        return deed - MOR_JIJIG, deed
 
     def x_bagana(self, i: int) -> tuple[float, float]:
         """`i` дугаар баганын зүүн, баруун хил (мм)."""
-        return self.x0 + i * self.bagana_urgun, self.x0 + (i + 1) * self.bagana_urgun
+        return self.t_x0 + i * self.bagana_urgun, self.t_x0 + (i + 1) * self.bagana_urgun
 
     # -- зурах туслахууд ---------------------------------------------------
 
@@ -229,27 +337,64 @@ class Husnegt:
     # -- бүрэлдэхүүн хэсгүүд ------------------------------------------------
 
     def huree(self) -> None:
-        """Цаасны хүрээ, дотор рамк, булангийн хүснэгт."""
-        self.tegsheg(0.0, 0.0, self.tsaas_urgun, self.tsaas_undur, L_HUREE)
-        self.tegsheg(self.x0, self.y0, self.x1, self.y1, L_HUREE)
+        """Танай хуудасны блок (байхгүй бол өөрийн хүрээ) + булангийн хүснэгт."""
+        if self.huree_block:
+            self.dwg.add(
+                Insert(self.huree_block, (0.0, 0.0), scale=self.masshtab / 1000.0,
+                       layer=lay(L_HUREE))
+            )
+        else:
+            self.tegsheg(0.0, 0.0, self.tsaas_urgun, self.tsaas_undur, L_HUREE)
+            self.tegsheg(self.x0, self.y0, self.x1, self.y1, L_HUREE)
         if self.shtamp:
             # Блокийн эх цэг нь баруун доод булан — хүрээний булантай нийлүүлнэ.
-            self.dwg.add(
-                Insert(
-                    self.shtamp,
-                    (self.mm(self.x1), self.mm(self.y0)),
-                    scale=self.masshtab / 1000.0,
-                    layer=lay(L_HUREE),
-                )
+            _shtamp_oruulah(
+                self.dwg, self.mm, self.shtamp, self.x1, self.y0,
+                self.masshtab / 1000.0,
+                {
+                    "ТӨСЛИЙН-НЭР": self.tosol,
+                    "ЗУРАГ-НЭР": self.garchig,
+                    "АЗ": "A3",
+                    "И_НЭР": INZHENER,
+                    "Г_НЭР": ZURSAN,
+                    "Ш_НЭР": SHALGASAN,
+                    "МАСШ": f"1:{self.masshtab}",
+                    "ОГНОО": self.ognoo,
+                    "ШИФР": self.shifr_zurag,
+                    "ТОО": "1",
+                },
             )
 
     def tor(self) -> None:
         """Хүснэгтийн шугамууд: мөр хоорондын зураас, баганын тусгаарлагч."""
-        for y in (self.t_y0, self.y_urd[1], self.y_ner[1], self.y_plan[1], self.t_y1):
+        mor_y = [self.t_y0, self.y_suuri[1], self.y_urd[1], self.y_ner[1], self.y_plan[1]]
+        mor_y += [self.y_jijig(k)[1] for k in range(len(JIJIG_MOR))]
+        # Бүлгийн гарчгийн мөр нь шошгын багана дээгүүр гардаггүй.
+        for y in sorted(set(mor_y)):
             self.shugam(self.x0, y, self.x1, y, L_HUREE)
+        self.shugam(self.t_x0, self.t_y1, self.x1, self.t_y1, L_HUREE)
+        self.shugam(self.x0, self.t_y0, self.x0, self.y_plan[1], L_HUREE)
         for i in range(self.bagana_too + 1):
-            x = self.x0 + i * self.bagana_urgun
-            self.shugam(x, self.t_y0, x, self.t_y1, L_HUREE)
+            x = self.t_x0 + i * self.bagana_urgun
+            self.shugam(x, self.t_y0, x, self.y_plan[1], L_HUREE)
+
+    def shoshgo(self) -> None:
+        """Зүүн талын шошгын багана — өндөр мөрүүдэд босоо, богинод хэвтээ."""
+        x_tov = self.x0 + SHOSHGO_URGUN / 2.0
+        for shoshgo, (yl, yu) in (
+            (SHOSHGO_PLAN, self.y_plan),
+            (SHOSHGO_ZAGVAR, self.y_urd),
+        ):
+            # Босоо: эргэлт π/2, голлуулах цэг нь мөрийн голд. Багтах зай нь
+            # МӨРИЙН ӨНДӨР — "ТУЛГУУР БАЙГУУЛАЛТЫН ДЭЭРХ ТЭМДЭГЛЭГЭЭ" 46 мм-т
+            # багтахгүй тул үсгийн өндрийг багасгана.
+            h = _shoshgo_undur(shoshgo, yu - yl)
+            self.bichig(x_tov + h * 0.35, (yl + yu) / 2.0, shoshgo, h, ergelt=math.pi / 2.0)
+        mor = [(SHOSHGO_NER, self.y_ner), (SHOSHGO_SUURI, self.y_suuri)]
+        mor += [(s, self.y_jijig(k)) for k, s in enumerate(JIJIG_MOR)]
+        for shoshgo, (yl, yu) in mor:
+            h = _shoshgo_undur(shoshgo, SHOSHGO_URGUN)
+            self.bichig(x_tov, (yl + yu) / 2.0 - h * 0.35, shoshgo, h)
 
     def buleg_garchig(self) -> None:
         """АНКЕР / ДУНДЫН гэсэн бүлгийн гарчиг — зэргэлдээ баганууд нэгдэнэ."""
@@ -272,31 +417,21 @@ class Husnegt:
         xa, xb = self.x_bagana(i)
         yl, yu = self.y_plan
         x = (xa + xb) / 2.0
-        # шифр — тэмдгийн дээр, доогуур зураастай
-        self.bichig(x, yu - 6.0, t.shifr, H_NER)
-        self.shugam(x - 12.0, yu - 7.5, x + 12.0, yu - 7.5, L_BICHIG)
-        # маршрутын шугам
-        self.shugam(x, yl + 4.0, x, yu - 12.0, L_TENH)
-        for k in range(1, 5):
-            yy = yl + 4.0 + (yu - 12.0 - yl - 4.0) * k / 5.0
-            self.shugam(x - 0.7, yy, x + 0.7, yy, L_TENH)
-        # тулгуурын тэмдэг
-        ys = yu - 14.5
-        if t.angilal in (ANKER, TOGSGOL, SALAA):
-            r = 2.2
-            self.z.zam(
-                [
-                    (self.mm(x - r), self.mm(ys + r)),
-                    (self.mm(x + r), self.mm(ys + r)),
-                    (self.mm(x), self.mm(ys - r)),
-                ],
-                L_BICHIG,
-                hulhii=True,
-            )
-        else:
-            self.dwg.circle((self.mm(x), self.mm(ys)), self.mm(2.0), layer=lay(L_BICHIG))
-        # ПК бичиг — босоо
-        self.bichig(x - 2.5, yl + 6.0, "ПК00+00", H_PK, tov=False, ergelt=math.pi / 2.0)
+        # Маршрутын шугам — тэмдгээс доош. Тэмдэг нь шугамын ДЭЭД үзүүрт.
+        ys = yu - 6.0
+        self.shugam(x, yl + 3.0, x, ys - 2.5, L_TENH)
+        _plan_temdeg_zurah(self.z, self.mm, x, ys, t)
+        # ПК бичиг — босоо, шугамын хажууд
+        self.bichig(x - 2.0, yl + 5.0, "ПК00+00", H_PK, tov=False, ergelt=math.pi / 2.0)
+
+    def jijig_mor_zurah(self, i: int, t: Tulguur) -> None:
+        """Доод богино мөрүүдийн утга."""
+        xa, xb = self.x_bagana(i)
+        for k, utga in enumerate(_jijig_utga(t)):
+            if not utga:
+                continue
+            yl, yu = self.y_jijig(k)
+            self.bichig((xa + xb) / 2.0, (yl + yu) / 2.0 - H_HEM * 0.35, utga, H_HEM)
 
     def ner_nuh(self, i: int, t: Tulguur) -> None:
         """Шифрийн мөр."""
@@ -340,52 +475,54 @@ class Husnegt:
         self.z.shugam(0.0, -ry, 0.0, ry, L_TENH)
         self.z.shiljuuleh(0.0, 0.0)
         if t.suuri > 0.05 and len(hol) > 1:
-            # Нүднээс гарахгүйн тулд нүдний доод шугамын дээр тавина.
-            self.bichig(cx, yl + 2.5, _too(t.suuri), H_HEM)
+            # Схемийн ЯГ ДООР — мөр өндөрссөн ч бичээс схемээсээ салахгүй.
+            hagas_mm = ry / self.masshtab * 1000.0
+            self.bichig(cx, max(cy - hagas_mm - 4.0, yl + 1.5), _too(t.suuri), H_HEM)
 
     def tailbar(self) -> None:
-        """Зүүн доод буланд тэмдэглэгээний тайлбар."""
-        x = self.x0 + 4.0
-        y = self.y0 + SHTAMP_UNDUR - 7.0
-        self.dwg.circle((self.mm(x), self.mm(y)), self.mm(2.0), layer=lay(L_BICHIG))
-        self.bichig(x + 6.0, y - 1.0, "Дундын тулгуур / Suspension tower", H_TAILBAR, tov=False)
-        y -= 8.0
-        r = 2.2
-        self.z.zam(
-            [
-                (self.mm(x - r), self.mm(y + r)),
-                (self.mm(x + r), self.mm(y + r)),
-                (self.mm(x), self.mm(y - r)),
-            ],
-            L_BICHIG,
-            hulhii=True,
-        )
-        self.bichig(x + 6.0, y - 1.0, "Анкер тулгуур / Tention tower", H_TAILBAR, tov=False)
-        y -= 8.0
+        """Зүүн доод буланд тэмдэглэгээний тайлбар — хуудасны түлхүүр.
+
+        Хоёр багана: зүүнд тулгуурын тэмдэг, баруунд эргэлт ба цооног.
+        Штамп нь баруун доод буланд суудаг тул энэ нь түүнээс зүүн тийш байна.
+        """
+        y_deed = self.t_y0 - 7.0
+        for x, mor in (
+            (self.x0 + 6.0, (("dund", "Дундын тулгуур"), ("anker", "Анкер тулгуур"))),
+            (self.x0 + 78.0, (("ergelt", "Эргэлтийн чиглэл /зүүн/"), ("tsooneg", "Ц-1  Геологийн цооног"))),
+        ):
+            y = y_deed
+            for temdeg, bichver in mor:
+                # Тэмдгийг богино шугамын дунд байрлуулна — танай зурагт мөн адил.
+                self.shugam(x - 5.0, y, x + 5.0, y, L_TENH)
+                _temdeg_zurah(self.z, self.mm, x, y, temdeg)
+                self.bichig(x + 9.0, y - 1.0, bichver, H_TAILBAR, tov=False)
+                y -= 9.0
+
         self.bichig(
-            x, y, f"Масштаб 1:{self.masshtab}   ({len(self.bag)} тулгуур)",
-            H_TAILBAR, tov=False,
-        )
-        y -= 5.5
-        self.bichig(
-            x, y, "ЭСП каталог 5713тм-т2 (1976). Хэмжээс метрээр.",
-            H_TAILBAR, tov=False,
+            self.x0 + 6.0, self.y0 + 2.5,
+            f"ЭСП каталог 5713тм-т2 (1976).  Хэмжээс метрээр.  Масштаб 1:{self.masshtab}.",
+            2.0, tov=False,
         )
 
     def barih(self) -> Drawing:
         """Бүх хэсгийг угсарч Drawing буцаана."""
         self.huree()
         self.tor()
+        self.shoshgo()
         self.buleg_garchig()
         for i, t in enumerate(self.bag):
             self.plan_temdeg(i, t)
             self.ner_nuh(i, t)
             self.urd_haragdats(i, t)
             self.suuri_plan(i, t)
+            self.jijig_mor_zurah(i, t)
         self.tailbar()
-        self.bichig(
-            (self.x0 + self.x1) / 2.0, self.y1 + 1.5, self.garchig, H_GARCHIG, layer=L_BICHIG
-        )
+        if not self.huree_block:
+            # Танай блок дотор гарчиг нь булангийн хүснэгтэд ордог тул давхардуулахгүй.
+            self.bichig(
+                (self.t_x0 + self.x1) / 2.0, self.y1 + 1.5, self.garchig, H_GARCHIG,
+                layer=L_BICHIG,
+            )
         return self.dwg
 
 
@@ -393,36 +530,32 @@ class Husnegt:
 # Нэг тулгуур = нэг АЗ хуудас (танай хүрээний блок дотор)
 # --------------------------------------------------------------------------
 
-# Хуудасны блок, булангийн хүснэгт, хүний нэр — БҮГД `zagvar.json`-оос ирнэ.
-# Эх кодод бичихгүй: тэдгээр нь тодорхой нэг захиалагчийн зургийн блокийн нэр,
-# ажилтны нэр бөгөөд энэ repo нээлттэй. Байхгүй бол хуудас өөрийн хүрээтэйгээр,
-# штампгүй гарна.
-_SHTAMP: dict = ZAGVAR.get("shtamp") or {}
+# --------------------------------------------------------------------------
+# Материалын түүврийн багана: (гарчиг, өргөн мм). Нийлбэр нь штампын өргөн —
+# хүснэгт нь штампын яг дээр, ирмэг нь тэгшхэн таарна.
+# --------------------------------------------------------------------------
 
-#: Булангийн хүснэгтийн блокийн нэр (`zagvar.py holboh` атрибутаар нь таана).
-SHTAMP_BLOCK: str = str(_SHTAMP.get("ner") or "")
-
-#: Атрибутын байрлал (блокийн эх цэгээс, мм) ба өндөр: (tag, x, y, h).
-SHTAMP_ATT: tuple[tuple[str, float, float, float], ...] = tuple(
-    (str(a[0]), float(a[1]), float(a[2]), float(a[3]))
-    for a in _SHTAMP.get("att", [])
-    if len(a) >= 4
+TUUVER_BAGANA: tuple[tuple[str, float], ...] = (
+    ("№", 9.0),
+    ("Хийцийн нэр", 48.0),
+    ("Марк", 38.0),
+    ("Хэмжих\nнэгж", 13.0),
+    ("Тоо\nхэмжээ", 14.0),
+    ("Нэгж", 13.0),
+    ("Нийт", 13.0),
+    ("Тайлбар", 22.44),
 )
 
-_HUN: dict = ZAGVAR.get("hunii_ner") or {}
-INZHENER: str = str(_HUN.get("inzhener") or "")
-ZURSAN: str = str(_HUN.get("zursan") or "") or INZHENER
-SHALGASAN: str = str(_HUN.get("shalgasan") or "")
-
-#: Цаасны хүрээний блок (хэмжээгээр нь танисан).
-A3_BLOCK: str = str(ZAGVAR.get("huree_block") or "")
+TUUVER_MOR = 4.6  # нэг мөрийн өндөр, мм
+TUUVER_HOOSON = 8  # гараар бөглөх хоосон мөрийн тоо
 
 
 class Huudas:
     """Нэг тулгуурыг танай АЗ хуудасны блок дотор зурна.
 
-    Зүүн талд өндөрлөгийн зураг + суурийн план, баруун талд ТАЙЛБАР,
-    баруун доод буланд булангийн хүснэгт (атрибутууд нь бөглөгдсөн).
+    Дээр нь гарчиг ба масштаб, зүүн талд өндөрлөгийн зураг + суурийн план,
+    баруун талд ТАЙЛБАР ба МАТЕРИАЛЫН ТҮҮВЭР, баруун доод буланд булангийн
+    хүснэгт (атрибутууд нь бөглөгдсөн).
     """
 
     def __init__(
@@ -438,7 +571,7 @@ class Huudas:
         inzhener: str = INZHENER,
         zursan: str = ZURSAN,
         shalgasan: str = SHALGASAN,
-        zurag_ner: str = "Нэг маягийн зураг",
+        zurag_ner: str = "",
     ) -> None:
         """Хуудасны бүсүүдийг тооцоод масштабыг сонгоно."""
         self.t = t
@@ -452,21 +585,27 @@ class Huudas:
         self.shalgasan = shalgasan
         self.zurag_ner = zurag_ner
 
-        self.x0, self.y0 = ZAH_ZUUN, ZAH
-        self.x1, self.y1 = TSAAS["A3"][0] - ZAH, TSAAS["A3"][1] - ZAH
-        # Баруун талын тайлбарын багана
-        self.tailbar_urgun = 118.0
-        self.zurag_x1 = self.x1 - self.tailbar_urgun
+        self.x0, self.y0, self.x1, self.y1 = dotor_huree("A3", self.huree_block)
+        # Баруун талын багана нь штампын өргөнтэй яг тэнцүү — түүний яг дээр
+        # материалын түүвэр суух тул хоёр ирмэг нэг босоо шугам болно.
+        self.tailbar_urgun = sum(u for _, u in TUUVER_BAGANA)
+        self.zurag_x1 = self.x1 - self.tailbar_urgun - 4.0
         # Булангийн хүснэгтийн дээд ирмэг
         self.shtamp_deed = self.y0 + SHTAMP_UNDUR
+        # Материалын түүврийн дээд ирмэг: гарчиг + толгой + мөрүүд
+        self.tuuver_y0 = self.shtamp_deed + 3.0
+        self.tuuver_undur = 5.0 + 7.0 + TUUVER_MOR * (1 + TUUVER_HOOSON)
+        self.tuuver_y1 = self.tuuver_y0 + self.tuuver_undur
 
         self.zurag_urgun = self.zurag_x1 - self.x0
+        # Гарчиг ба масштабын мөр дээд талд байр эзэлнэ.
+        self.garchig_y = self.y1 - 7.0
         # Босоо чиглэлд өндөрлөг БА суурийн план хоёулаа багтах ёстой: хоёулаа
         # масштабаас хамаардаг тул нийлбэрээр нь масштабаа сонгоно, зайг мм-ээр
         # тусад нь хасна.
         self.suuri_undur_m = _suuri_undur(t)
         zai_mm = 28.0  # газрын шугам ба план хоорондын зай + доод захын зай
-        bolomj = (self.y1 - self.y0 - zai_mm) * 0.97
+        bolomj = (self.garchig_y - 6.0 - self.y0 - zai_mm) * 0.97
         self.masshtab = masshtab or _masshtab_hos(
             t.undur + self.suuri_undur_m, 2.0 * _hagas_urgun(t), bolomj, self.zurag_urgun * 0.80
         )
@@ -494,6 +633,10 @@ class Huudas:
             layer=lay(layer),
         )
 
+    def shugam(self, x0: float, y0: float, x1: float, y1: float, layer: str = L_HUREE) -> None:
+        """Цаасны мм координатаар шулуун татна."""
+        self.z.shugam(self.mm(x0), self.mm(y0), self.mm(x1), self.mm(y1), layer)
+
     # -- хэсгүүд -----------------------------------------------------------
 
     def huree(self) -> None:
@@ -515,41 +658,97 @@ class Huudas:
                 hulhii=True,
             )
 
+    @property
+    def garchig(self) -> str:
+        """Хуудасны гарчиг танай нэршлээр: "П110-1 МАЯГИЙН ЗАВСРЫН ТУЛГУУР"."""
+        return f"{self.t.shifr} МАЯГИЙН {self.t.angilal.upper()} ТУЛГУУР"
+
     def bulangiin_husnegt(self) -> None:
         """Булангийн хүснэгт + атрибутуудыг бөглөнө."""
-        if not self.shtamp or not SHTAMP_ATT:
-            return
-        s = self.masshtab / 1000.0
-        bx, by = self.x1, self.y0  # блокийн эх цэг нь баруун доод булан
-        utga = {
-            "ТӨСЛИЙН-НЭР": self.tosol,
-            "ЗУРАГ-НЭР": f"{self.zurag_ner}. {self.t.shifr}",
-            "АЗ": "A3",
-            "И_НЭР": self.inzhener,
-            "МАСШ": f"1:{self.masshtab}",
-            "ОГНОО": self.ognoo,
-            "Г_НЭР": self.zursan,
-            "Ш_НЭР": self.shalgasan,
-            "ШИФР": self.shifr_zurag,
-            "ХТ-1": "",
-            "ТОО": "1",
-        }
-        self.dwg.add(
-            Insert(self.shtamp, (self.mm(bx), self.mm(by)), scale=s,
-                   layer=lay(L_HUREE), atributtai=True)
+        _shtamp_oruulah(
+            self.dwg, self.mm, self.shtamp, self.x1, self.y0, self.masshtab / 1000.0,
+            {
+                "ТӨСЛИЙН-НЭР": self.tosol,
+                "ЗУРАГ-НЭР": self.zurag_ner or self.garchig,
+                "АЗ": "A3",
+                "И_НЭР": self.inzhener,
+                "МАСШ": f"1:{self.masshtab}",
+                "ОГНОО": self.ognoo,
+                "Г_НЭР": self.zursan,
+                "Ш_НЭР": self.shalgasan,
+                "ШИФР": self.shifr_zurag,
+                "ТОО": "1",
+            },
         )
-        for tag, ax, ay, ah in SHTAMP_ATT:
-            self.dwg.add(
-                Attrib(
-                    tag,
-                    utga.get(tag, ""),
-                    (self.mm(bx + ax), self.mm(by + ay)),
-                    height=self.mm(ah),
-                    style=BICHGIIN_HEV,
-                    layer=lay(L_HUREE),
-                )
-            )
-        self.dwg.add(SeqEnd(layer=lay(L_HUREE)))
+
+    def gartsag(self) -> None:
+        """Зургийн дээд гарчиг ба масштаб — танай маягаар доогуур зураастай."""
+        cx = (self.x0 + self.zurag_x1) / 2.0
+        self.bichig(cx, self.garchig_y, self.garchig, 4.0, tov=True)
+        urt = len(self.garchig) * 4.0 * 0.62 / 2.0
+        self.shugam(cx - urt, self.garchig_y - 1.8, cx + urt, self.garchig_y - 1.8, L_BICHIG)
+        self.bichig(cx, self.garchig_y - 7.0, f"М 1:{self.masshtab}", 3.0, tov=True)
+
+    def tuuver(self) -> None:
+        """МАТЕРИАЛЫН ТҮҮВЭР — баруун доод хүснэгт.
+
+        Каталог нь тулгуурын хийцийн жагсаалт агуулдаггүй: зөвхөн бүтэн массыг
+        мэднэ. Тиймээс эхний мөрийг бөглөөд үлдсэнийг ГАРААР бөглөх хоосон
+        мөрөөр гаргана — хуурамч мөр зохиохоос хоосон мөр дээр нь бичих нь дээр.
+        """
+        x0, x1 = self.x1 - self.tailbar_urgun, self.x1
+        y0, y1 = self.tuuver_y0, self.tuuver_y1
+        y_garchig = y1 - 5.0  # нэгтгэсэн гарчгийн мөрийн доод ирмэг
+        y_tolgoi = y_garchig - 7.0  # багана толгойн доод ирмэг
+
+        # Хүрээ ба хэвтээ шугамууд
+        for y in (y0, y_tolgoi, y_garchig, y1):
+            self.shugam(x0, y, x1, y)
+        for k in range(1, 2 + TUUVER_HOOSON):
+            self.shugam(x0, y_tolgoi - k * TUUVER_MOR, x1, y_tolgoi - k * TUUVER_MOR)
+
+        # Багана толгой. "Жин, кг" нь Нэгж/Нийт хоёрыг нэгтгэнэ.
+        x = x0
+        for ner, urgun in TUUVER_BAGANA:
+            self.shugam(x, y0, x, y_garchig)
+            tov_x = x + urgun / 2.0
+            if ner in ("Нэгж", "Нийт"):
+                self.bichig(tov_x, y_tolgoi + 1.2, ner, 2.0, tov=True)
+            else:
+                mor = ner.split("\n")
+                for i, m in enumerate(mor):
+                    y_m = y_garchig - 2.8 - i * 2.6 - (0.0 if len(mor) > 1 else 0.7)
+                    self.bichig(tov_x, y_m, m, 2.0, tov=True)
+            x += urgun
+        self.shugam(x1, y0, x1, y1)
+        self.shugam(x0, y0, x0, y1)
+        # "Жин, кг" — хоёр баганыг нэгтгэсэн дээд хагас
+        x_jin = x0 + sum(u for n, u in TUUVER_BAGANA if n not in ("Нэгж", "Нийт", "Тайлбар"))
+        urgun_jin = sum(u for n, u in TUUVER_BAGANA if n in ("Нэгж", "Нийт"))
+        self.shugam(x_jin, y_tolgoi + 3.5, x_jin + urgun_jin, y_tolgoi + 3.5)
+        self.bichig(x_jin + urgun_jin / 2.0, y_tolgoi + 4.6, "Жин, кг", 2.0, tov=True)
+
+        # Нэгтгэсэн гарчгийн мөр
+        self.bichig(
+            (x0 + x1) / 2.0, y_garchig + 1.4,
+            f"{self.t.shifr} тулгуурын материалын түүвэр", 2.2, tov=True,
+        )
+
+        # Эхний мөр — каталогийн мэддэг цорын ганц хийц
+        jin = f"{self.t.jin:.0f}" if self.t.jin is not None else ""
+        temdeglel = ""
+        if self.t.jin_ts is not None:
+            temdeglel = f"цинктэй {self.t.jin_ts:.0f}"
+        utga = ("1", "Тулгуур", self.t.shifr, "ш", "1", jin, jin, temdeglel)
+        y_mor = y_tolgoi - TUUVER_MOR + 1.4
+        x = x0
+        for (ner, urgun), v in zip(TUUVER_BAGANA, utga, strict=True):
+            if v:
+                if ner in ("Хийцийн нэр", "Марк"):
+                    self.bichig(x + 1.5, y_mor, v, 2.0)
+                else:
+                    self.bichig(x + urgun / 2.0, y_mor, v, 2.0, tov=True)
+            x += urgun
 
     def zurag(self) -> None:
         """Өндөрлөгийн зураг — зүүн бүсийн голд, доор нь суурийн план."""
@@ -582,35 +781,126 @@ class Huudas:
         self.bichig(cx, self.y0 + 5.0, f"Суурийн план  {_too(self.t.suuri)} м", H_HEM, tov=True)
 
     def tailbar(self) -> None:
-        """Баруун талын ТАЙЛБАР багана."""
-        x = self.zurag_x1 + 6.0
-        y = self.y1 - 8.0
-        self.z.shugam(
-            self.mm(self.zurag_x1), self.mm(self.shtamp_deed),
-            self.mm(self.zurag_x1), self.mm(self.y1),
-            L_HUREE,
-        )
-        self.bichig(x, y, "ТАЙЛБАР", 3.5)
-        y -= 8.0
+        """Баруун талын ТАЙЛБАР — материалын түүврийн дээр."""
+        x0 = self.x1 - self.tailbar_urgun
+        x = x0 + 2.0
+        y = self.y1 - 6.0
+        self.bichig(x, y, "ТАЙЛБАР", 3.0)
+        self.shugam(x, y - 1.8, x + 22.0, y - 1.8, L_BICHIG)
+        y -= 7.0
         for gar, utga in _tailbar_mor(self.t):
             if not utga:
                 continue
-            for i, mor in enumerate(_taslah(utga, 34)):
-                self.bichig(x, y, f"{gar}:" if i == 0 else "", 2.5)
-                self.bichig(x + 34.0, y, mor, 2.5)
-                y -= 4.6
-            y -= 1.0
+            for i, mor in enumerate(_taslah(utga, 40)):
+                if i == 0:
+                    self.bichig(x, y, f"{gar}:", 2.2)
+                self.bichig(x + 40.0, y, mor, 2.2)
+                y -= 4.0
         if not self.t.batalgaa:
-            y -= 3.0
-            self.bichig(x, y, "≈ Хэмжээс ойролцоо — эскизээс уншаагүй.", 2.5)
+            y -= 2.5
+            self.bichig(x, y, "≈ Хэмжээс ойролцоо — каталогийн эскизээс уншаагүй.", 2.2)
 
     def barih(self) -> Drawing:
         """Бүх хэсгийг угсарна."""
         self.huree()
+        self.gartsag()
         self.zurag()
         self.tailbar()
+        self.tuuver()
         self.bulangiin_husnegt()
         return self.dwg
+
+
+def _shtamp_oruulah(
+    dwg: Drawing,
+    mm: Callable[[float], float],
+    shtamp: str,
+    bx: float,
+    by: float,
+    scale: float,
+    utga: dict[str, str],
+) -> None:
+    """Булангийн хүснэгтийг оруулж атрибутуудыг бөглөнө.
+
+    `bx`, `by` нь блокийн эх цэг цаасны мм-ээр — ихэнх штампынх нь баруун доод
+    булан. Атрибутын байрлал мэдэгдэхгүй бол блокийг бөглөөгүй байдлаар нь
+    тавина: буруу байрлалд бичээс хаяхаас хоосон штамп нь дээр.
+    """
+    if not shtamp:
+        return
+    atributtai = bool(SHTAMP_ATT)
+    dwg.add(
+        Insert(shtamp, (mm(bx), mm(by)), scale=scale, layer=lay(L_HUREE),
+               atributtai=atributtai)
+    )
+    if not atributtai:
+        return
+    for tag, ax, ay, ah in SHTAMP_ATT:
+        dwg.add(
+            Attrib(
+                tag,
+                utga.get(tag, ""),
+                (mm(bx + ax), mm(by + ay)),
+                height=mm(ah),
+                style=BICHGIIN_HEV,
+                layer=lay(L_HUREE),
+            )
+        )
+    dwg.add(SeqEnd(layer=lay(L_HUREE)))
+
+
+#: Бичгийн хэвийн үсгийн ойролцоо өргөн / өндөр харьцаа. Яг утга нь фонтоос
+#: хамаарна; шошго нүднээсээ халихгүй байх л зорилго тул бага зэрэг өгөөмөр.
+USEG_HARTSAA = 0.65
+
+
+def _shoshgo_undur(shoshgo: str, zai_mm: float) -> float:
+    """`zai_mm` урттай нүдэнд багтах үсгийн өндөр (мм), `H_SHOSHGO`-оос хэтрэхгүй."""
+    urt = max(len(shoshgo), 1) * USEG_HARTSAA
+    return max(min(H_SHOSHGO, zai_mm * 0.94 / urt), 1.4)
+
+
+def _temdeg_zurah(z: Zurag, mm: Callable[[float], float], x: float, y: float, hev: str) -> None:
+    """Планы тэмдгийг цаасны мм координатад зурна (тайлбар ба план мөрөнд нэг ижил)."""
+    if hev == "anker":
+        r = 2.2
+        z.zam(
+            [(mm(x - r), mm(y + r)), (mm(x + r), mm(y + r)), (mm(x), mm(y - r))],
+            L_BICHIG,
+            hulhii=True,
+        )
+    elif hev == "dund":
+        z.toirog(mm(x), mm(y), mm(2.0))
+    elif hev == "tsooneg":
+        z.toirog(mm(x), mm(y), mm(2.2))
+        z.toirog(mm(x), mm(y), mm(0.9))
+    elif hev == "ergelt":
+        # Эргэлтийн чиглэл: шугамаас гарах ташуу зураас
+        z.zam(
+            [(mm(x - 2.5), mm(y - 2.5)), (mm(x + 2.5), mm(y + 2.5)), (mm(x + 0.5), mm(y + 2.5))],
+            L_BICHIG,
+        )
+
+
+def _plan_temdeg_zurah(
+    z: Zurag, mm: Callable[[float], float], x: float, y: float, t: Tulguur
+) -> None:
+    """Тулгуурын ангилалд тохирох планы тэмдэг."""
+    hev = "anker" if t.angilal in (ANKER, TOGSGOL, SALAA) else "dund"
+    _temdeg_zurah(z, mm, x, y, hev)
+
+
+def _jijig_utga(t: Tulguur) -> tuple[str, ...]:
+    """Доод богино мөрүүдийн утга, `JIJIG_MOR`-ийн дарааллаар."""
+    traverse = "—"
+    if t.tor:
+        traverse = f"{_too(max(x.urt for x in t.tor))} м"
+    return (
+        t.material,
+        traverse,
+        f"{t.jin:.0f}" if t.jin is not None else "—",
+        "",  # ТОО ШИРХЭГ — төслөөр бөглөгдөнө
+    )
 
 
 def _suuri_undur(t: Tulguur) -> float:
@@ -677,10 +967,10 @@ def neg_huudas(t: Tulguur, out: Path, **tohirgoo: object) -> bool:
 
 
 def _buleg(t: Tulguur) -> str:
-    """Тулгуурын бүлгийн гарчиг (танай зургийн нэршлээр)."""
+    """Тулгуурын бүлгийн гарчиг (танай нэршлээр)."""
     if t.angilal in (ANKER, TOGSGOL, SALAA):
-        return "АНКЕР ТУЛГУУР / TENTION TOWER"
-    return "ДУНДЫН ТУЛГУУР / SUSPENSION TOWER"
+        return "АНКЕР ТУЛГУУР"
+    return "ДУНДЫН ТУЛГУУР"
 
 
 def erembe(t: Tulguur) -> tuple[str, float]:
@@ -714,17 +1004,9 @@ def _hol_bairlal(t: Tulguur) -> list[tuple[float, float]]:
     return [(-a, -a), (a, -a), (a, a), (-a, a)]
 
 
-def husnegt(
-    bag: Sequence[Tulguur],
-    out: Path,
-    *,
-    tsaas: str = "A3",
-    masshtab: int | None = None,
-    garchig: str = "ТОНОГЛОЛЫН ТЕХНИКИЙН ҮЗҮҮЛЭЛТ",
-    shtamp: str = "",
-) -> bool:
-    """Нэг хуудсыг үүсгэж DWG болгож бичнэ."""
-    h = Husnegt(bag, tsaas=tsaas, masshtab=masshtab, garchig=garchig, shtamp=shtamp)
+def husnegt(bag: Sequence[Tulguur], out: Path, **tohirgoo: object) -> bool:
+    """Нэг тэмдэглэгээний хуудсыг үүсгэж DWG болгож бичнэ."""
+    h = Husnegt(bag, **tohirgoo)  # type: ignore[arg-type]
     dwg = h.barih()
     return _bicheh(dwg, out, f"{out.stem} (1:{h.masshtab}, {len(bag)} багана)")
 
@@ -744,7 +1026,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--masshtab", type=int, help="1:M (өгөхгүй бол автомат)")
     p.add_argument("--bagana", type=int, default=7, help="нэг хуудсанд хэдэн багана")
     p.add_argument("--shtamp", default=SHTAMP_BLOCK, help="штампын блокийн нэр")
-    p.add_argument("--garchig", default="ТОНОГЛОЛЫН ТЕХНИКИЙН ҮЗҮҮЛЭЛТ")
+    p.add_argument("--huree-block", default=A3_BLOCK, help="АЗ хуудасны блокийн нэр")
+    p.add_argument("--garchig", default="ТУЛГУУР БАЙГУУЛАЛТЫН ТЭМДЭГЛЭГЭЭ БА ТУЛГУУРЫН ХЭМЖЭЭС")
+    p.add_argument("--tosol", default="", help="төслийн нэр (булангийн хүснэгтэд)")
+    p.add_argument("--ognoo", default="", help="огноо")
+    p.add_argument("--zurag-shifr", default="", help="зургийн шифр")
     p.add_argument("--out", type=Path, default=OUTDIR)
     a = p.parse_args(argv)
 
@@ -762,8 +1048,8 @@ def main(argv: list[str] | None = None) -> int:
         print("тулгуур олдсонгүй")
         return 1
 
-    # Анкерыг эхэнд, дундыг дараа нь — танай зургийн дараалал.
-    bag.sort(key=lambda t: (_buleg(t) != "АНКЕР ТУЛГУУР / TENTION TOWER", *erembe(t)))
+    # Дундын эхэнд, анкер дараа нь — танай хуудасны дараалал.
+    bag.sort(key=lambda t: (_buleg(t) != "ДУНДЫН ТУЛГУУР", *erembe(t)))
 
     a.out.mkdir(parents=True, exist_ok=True)
     ok = 0
@@ -772,7 +1058,8 @@ def main(argv: list[str] | None = None) -> int:
         ner = f"husnegt-{n:02d}" if len(huudas) > 1 else "husnegt"
         ok += husnegt(
             heseg, a.out / f"{ner}.dwg", tsaas=a.tsaas, masshtab=a.masshtab,
-            garchig=a.garchig, shtamp=a.shtamp,
+            garchig=a.garchig, shtamp=a.shtamp, huree_block=a.huree_block,
+            tosol=a.tosol, ognoo=a.ognoo, shifr_zurag=a.zurag_shifr,
         )
     print(f"\n{ok}/{len(huudas)} хуудас -> {a.out}")
     return 0 if ok == len(huudas) else 1

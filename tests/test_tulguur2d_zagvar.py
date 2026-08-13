@@ -109,10 +109,13 @@ def test_bichgiin_hev_идэвхтэйг_эрхэмлэнэ() -> None:
     assert zagvar.bichgiin_hev({"hev": []}) == "Standard"
 
 
-def _block(ner: str, urgun: float, undur: float, orsonoo: int, att: int = 0) -> dict:
+def _block(
+    ner: str, urgun: float, undur: float, orsonoo: int, att: int = 0,
+    rect: list | None = None,
+) -> dict:
     return {
         "ner": ner, "urgun": urgun, "undur": undur, "x0": 0.0, "y0": 0.0,
-        "entity": 10, "orsonoo": orsonoo,
+        "entity": 10, "orsonoo": orsonoo, "rect": rect or [],
         "att": [{"tag": f"T{i}", "x": 0.0, "y": float(i), "h": 2.0} for i in range(att)],
     }
 
@@ -124,9 +127,27 @@ def test_huree_taah_хэмжээгээр_таана() -> None:
         _block("ХУУДАС", 420.0, 297.0, 20),
         _block("ТОМ", 1189.0, 841.0, 3),
     ]
-    assert zagvar.huree_taah(block, "A3") == "ХУУДАС"
-    assert zagvar.huree_taah(block, "A0") == "ТОМ"
-    assert zagvar.huree_taah([], "A3") == ""
+    assert zagvar.huree_taah(block, "A3")["ner"] == "ХУУДАС"
+    assert zagvar.huree_taah(block, "A0")["ner"] == "ТОМ"
+    assert zagvar.huree_taah([], "A3") == {}
+
+
+def test_huree_taah_дотоод_зурах_талбайг_олно() -> None:
+    """Үүрлэсэн тэгш өнцөгтөөс ЗУРАХ талбайг сонгоно — захын зайг таамаглахгүй."""
+    block = [
+        _block("ХУУДАС", 420.0, 297.0, 20, rect=[
+            (0.0, 0.0, 420.0, 297.0),  # цаасны ирмэг
+            (15.0, 5.0, 415.0, 292.0),  # бүсийн зурвас
+            (20.0, 10.0, 410.0, 287.0),  # зурах талбай — энэ нь ялна
+            (300.0, 10.0, 410.0, 46.0),  # штампын нүд — хэтэрхий жижиг
+        ]),
+    ]
+    assert zagvar.huree_taah(block, "A3")["dotor"] == [20.0, 10.0, 410.0, 287.0]
+
+
+def test_huree_taah_тэгш_өнцөгтгүй_бол_хоосон_буцаана() -> None:
+    """Хэмжиж чадаагүй бол ХООСОН — таамаглахаас өгөгдмөл зай нь дээр."""
+    assert zagvar.huree_taah([_block("ХУУДАС", 420.0, 297.0, 20)], "A3")["dotor"] == []
 
 
 def test_shtamp_taah_олон_атрибуттайг_биш_олон_орсныг_сонгоно() -> None:
@@ -179,9 +200,9 @@ def test_erembe_нэмэлтийг_тоогоор_эрэмбэлнэ() -> None:
 
 def test_buleg_анкер_дундыг_ялгана() -> None:
     """Анкер, төгсгөл, салаа нь нэг бүлэг; завсрын нь нөгөө бүлэг."""
-    assert "TENTION" in husnegt._buleg(KATALOG.ol("У110-2"))
-    assert "SUSPENSION" in husnegt._buleg(KATALOG.ol("П110-4"))
-    assert "TENTION" in husnegt._buleg(KATALOG.ol("КСБ110-1"))
+    assert husnegt._buleg(KATALOG.ol("У110-2")) == "АНКЕР ТУЛГУУР"
+    assert husnegt._buleg(KATALOG.ol("П110-4")) == "ДУНДЫН ТУЛГУУР"
+    assert husnegt._buleg(KATALOG.ol("КСБ110-1")) == "АНКЕР ТУЛГУУР"
 
 
 def test_hol_bairlal_хэв_бүрт_тохирно() -> None:
@@ -195,7 +216,7 @@ def test_hol_bairlal_хэв_бүрт_тохирно() -> None:
 def test_husnegt_бүрэн_баригдана() -> None:
     """Хуудас нь entity-тэй, бүх давхарга бүртгэлтэй, штамп орсон байна."""
     bag = [KATALOG.ol(s) for s in ("У110-2", "У110-2+5", "П110-4")]
-    h = husnegt.Husnegt(bag, shtamp="ШТАМП")
+    h = husnegt.Husnegt(bag, shtamp="ШТАМП", huree_block="")
     dwg = h.barih()
     assert len(dwg) > 200
     assert not dwg.missing_layers()
@@ -209,9 +230,93 @@ def test_husnegt_бүрэн_баригдана() -> None:
 
 def test_husnegt_штампгүй_ч_ажиллана() -> None:
     """Танай блок байхгүй орчинд ч хуудас гарах ёстой."""
-    dwg = husnegt.Husnegt([KATALOG.ol("П110-4")], shtamp="").barih()
+    dwg = husnegt.Husnegt([KATALOG.ol("П110-4")], shtamp="", huree_block="").barih()
     assert not any(e.dxf_type == "INSERT" for e in dwg.entities)
     assert len(dwg) > 50
+
+
+def test_husnegt_хт1_ийн_бүх_мөрийн_шошго_гарна() -> None:
+    """Тэмдэглэгээний хуудасны зүүн шошгын багана бүрэн буух ёстой."""
+    dwg = husnegt.Husnegt([KATALOG.ol("П110-4")], shtamp="", huree_block="").barih()
+    text = {e.value for e in dwg.entities if e.dxf_type == "TEXT"}
+    for shoshgo in (
+        husnegt.SHOSHGO_PLAN, husnegt.SHOSHGO_NER,
+        husnegt.SHOSHGO_ZAGVAR, husnegt.SHOSHGO_SUURI,
+    ):
+        assert shoshgo in text, shoshgo
+    assert set(husnegt.JIJIG_MOR) <= text
+
+
+def test_husnegt_хүрээний_блок_зөвхөн_а3_д_ордог() -> None:
+    """Танай блок нь АЗ-ынх. А1 дээр тавибал хэмжээ зөрнө."""
+    bag = [KATALOG.ol("П110-4")]
+    a3 = husnegt.Husnegt(bag, shtamp="", huree_block="ХУУДАС_A3")
+    a1 = husnegt.Husnegt(bag, shtamp="", huree_block="ХУУДАС_A3", tsaas="A1")
+    assert a3.huree_block == "ХУУДАС_A3"
+    assert a1.huree_block == ""
+    assert any(e.dxf_type == "INSERT" for e in a3.barih().entities)
+    assert not any(e.dxf_type == "INSERT" for e in a1.barih().entities)
+
+
+# --------------------------------------------------------------------------
+# Нэг тулгуурын хуудас
+# --------------------------------------------------------------------------
+
+
+def test_huudas_гарчиг_танай_нэршлээр() -> None:
+    """"<марк> МАЯГИЙН <ангилал> ТУЛГУУР" — танай хуудасны бичиг."""
+    h = husnegt.Huudas(KATALOG.ol("П110-4"), huree_block="", shtamp="")
+    assert h.garchig == "П110-4 МАЯГИЙН ЗАВСРЫН ТУЛГУУР"
+    assert husnegt.Huudas(KATALOG.ol("У110-2"), huree_block="", shtamp="").garchig == (
+        "У110-2 МАЯГИЙН АНКЕР-ӨНЦГИЙН ТУЛГУУР"
+    )
+    text = {e.value for e in h.barih().entities if e.dxf_type == "TEXT"}
+    assert h.garchig in text
+    assert f"М 1:{h.masshtab}" in text
+
+
+def test_tuuver_багана_штампын_өргөнтэй_тэнцүү() -> None:
+    """Хүснэгт нь штампын яг дээр суух тул ирмэг нь нэг босоо шугам болно."""
+    niit = sum(u for _, u in husnegt.TUUVER_BAGANA)
+    assert abs(niit - husnegt.SHTAMP_URGUN) < 0.01
+
+
+def test_tuuver_эхний_мөрөнд_каталогийн_масс_ордог() -> None:
+    """Каталог зөвхөн бүтэн массыг мэднэ — тэр нэг мөр бөглөгдөнө."""
+    t = KATALOG.ol("П110-4")
+    assert t.jin is not None
+    dwg = husnegt.Huudas(t, huree_block="", shtamp="").barih()
+    text = {e.value for e in dwg.entities if e.dxf_type == "TEXT"}
+    assert f"{t.shifr} тулгуурын материалын түүвэр" in text
+    assert f"{t.jin:.0f}" in text
+    assert "Тулгуур" in text
+
+
+def test_tuuver_штампыг_давхарлахгүй() -> None:
+    """Түүврийн доод ирмэг нь булангийн хүснэгтийн дээд ирмэгээс дээгүүр."""
+    for shifr in ("П110-4", "У330-2+14", "ПБ35-1", "ПБ1"):
+        h = husnegt.Huudas(KATALOG.ol(shifr), huree_block="", shtamp="")
+        assert h.tuuver_y0 >= h.shtamp_deed, shifr
+        assert h.tuuver_y1 < h.y1, shifr
+
+
+def test_dotor_huree_блокгүй_бол_өгөгдмөл_зай() -> None:
+    """Танай блок байхгүй орчинд өгөгдмөл захын зайд унана."""
+    assert husnegt.dotor_huree("A3", "") == (20.0, 5.0, 415.0, 292.0)
+    assert husnegt.dotor_huree("A1", "") == (20.0, 5.0, 836.0, 589.0)
+
+
+def test_dotor_huree_блоктой_бол_хэмжсэн_талбай() -> None:
+    """Блок хэрэглэж байвал ТҮҮНЭЭС хэмжсэн талбай — таамаг биш.
+
+    `zagvar.json` байхгүй орчинд хэмжсэн утга ч байхгүй тул өгөгдмөлд унана;
+    хоёр тохиолдолд ч хариу нь хүрээнээс ГАДНА гарах ёсгүй.
+    """
+    x0, y0, x1, y1 = husnegt.dotor_huree("A3", "ХУУДАС_A3")
+    assert 0.0 <= x0 < x1 <= husnegt.TSAAS["A3"][0]
+    assert 0.0 <= y0 < y1 <= husnegt.TSAAS["A3"][1]
+    if husnegt.HUREE_DOTOR is not None:
+        assert (x0, y0, x1, y1) == husnegt.HUREE_DOTOR
 
 
 def test_husnegt_цаасны_хэмжээ() -> None:

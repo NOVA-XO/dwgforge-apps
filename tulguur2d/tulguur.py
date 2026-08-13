@@ -35,6 +35,7 @@ from tulguursan import (
     TOGSGOL,
     ZAVSAR,
     ZAVSAR_ONTSOG,
+    Tulguur,
 )
 from zurag import OUTDIR, bicheh, toim
 
@@ -127,7 +128,10 @@ def main(argv: list[str] | None = None) -> int:
     # Тойм нь ГАНЦ файл бичдэг тул зөвхөн түүний түгжээ хамаатай; тус тусдаа
     # бичих үед бүлгийн файл бүрийг шалгана.
     ner = _toim_ner(a) if a.toim else ""
-    hyanah = (_Ner(ner),) if a.toim else bag
+    if a.toim:
+        hyanah: Sequence = (_Ner(ner),)
+    else:
+        hyanah = [_Ner(_fayl_ner(t, a3=a.a3)) for t in bag]
     if _tugjee(hyanah, a.out, arilgah=a.tugjee_arilgah):
         return 1
     ehleh = time.monotonic()
@@ -141,14 +145,15 @@ def main(argv: list[str] | None = None) -> int:
     if a.a3:
         amjilt = sum(
             neg_huudas(
-                t, a.out / f"{t.ner}.dwg", tosol=a.tosol, ognoo=a.ognoo,
+                t, a.out / f"{_fayl_ner(t, a3=True)}.dwg", tosol=a.tosol, ognoo=a.ognoo,
                 shifr_zurag=a.zurag_shifr,
             )
             for t in bag
         )
     else:
         amjilt = sum(
-            bicheh(t, a.out / f"{t.ner}.dwg", hemjees=not a.hemjeesgui) for t in bag
+            bicheh(t, a.out / f"{_fayl_ner(t, a3=False)}.dwg", hemjees=not a.hemjeesgui)
+            for t in bag
         )
     hugatsaa = time.monotonic() - ehleh
     print(f"\n{amjilt}/{len(bag)} амжилттай, {hugatsaa:.0f} секунд -> {a.out}")
@@ -157,9 +162,18 @@ def main(argv: list[str] | None = None) -> int:
 
 @dataclass(frozen=True, slots=True)
 class _Ner:
-    """`_tugjee`-д зөвхөн файлын нэр өгөх жижиг боодол (тойм хуудсанд)."""
+    """`_tugjee`-д зөвхөн файлын нэр өгөх жижиг боодол."""
 
     ner: str
+
+
+def _fayl_ner(t: Tulguur, *, a3: bool) -> str:
+    """Гаралтын файлын нэр. АЗ хуудас нь эскизийг ДАРАХГҮЙ — өөр нэртэй.
+
+    Веб дээрх нэршилтэй нэг байх ёстой: тэнд `<нэр>-A3.dwg` гэж хадгалдаг.
+    Зөрвөл нэг тулгуурын хоёр хувилбар нэг файл руу бичигдэнэ.
+    """
+    return f"{t.ner}-A3" if a3 else t.ner
 
 
 def _tugjee(bag: Sequence, out: Path, *, arilgah: bool) -> bool:
