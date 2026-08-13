@@ -300,6 +300,53 @@ def test_tuuver_штампыг_давхарлахгүй() -> None:
         assert h.tuuver_y1 < h.y1, shifr
 
 
+def test_delgerengui_бүдүүвчээс_үргэлж_том() -> None:
+    """Хоёр хуудас ижил масштабтай бол дэлгэрэнгүй нь утгаа алдана."""
+    for shifr in ("П110-4", "У110-2", "ПБ35-1", "У330-2+14", "ПБ1"):
+        t = KATALOG.ol(shifr)
+        b = husnegt.Huudas(t, huree_block="", shtamp="")
+        d = husnegt.Delgerengui(t, buduuvch_masshtab=b.masshtab, huree_block="", shtamp="")
+        assert d.masshtab < b.masshtab, f"{shifr}: {d.masshtab} !< {b.masshtab}"
+
+
+def test_delgerengui_багтахгүй_бол_цаас_томорно() -> None:
+    """АЗ дээр багтахгүй өндөр тулгуурт A2/A1 сонгогдоно."""
+    tsaas = {
+        s: husnegt.Delgerengui(
+            KATALOG.ol(s), buduuvch_masshtab=400, huree_block="", shtamp=""
+        ).tsaas
+        for s in ("ПБ35-1", "У330-2+14")
+    }
+    assert tsaas["ПБ35-1"] in husnegt.TSAAS
+    assert husnegt.TSAAS[tsaas["У330-2+14"]][1] >= husnegt.TSAAS[tsaas["ПБ35-1"]][1]
+
+
+def test_delgerengui_хуудсууд_давхцахгүй() -> None:
+    """Хоёр хуудас модель орчинд зэрэгцэнэ — огтлолцвол хэвлэхэд эвдэрнэ."""
+    from dwgforge import Drawing, DrawingOptions
+
+    t = KATALOG.ol("П110-4")
+    dwg = Drawing(options=DrawingOptions(dwg_format="2018"))
+    b = husnegt.Huudas(t, dwg=dwg, huree_block="", shtamp="")
+    b.barih()
+    ox = b.mm(husnegt.TSAAS["A3"][0]) * (1.0 + husnegt.HUUDAS_ZAI)
+    d = husnegt.Delgerengui(
+        t, dwg=dwg, ox=ox, buduuvch_masshtab=b.masshtab, huree_block="", shtamp=""
+    )
+    d.barih()
+    assert ox > b.mm(husnegt.TSAAS["A3"][0]), "дэлгэрэнгүй нь бүдүүвч дээр давхарлаж байна"
+    assert len(dwg) > 300
+
+
+def test_hemjees_хүснэгт_бүх_траверсыг_бичнэ() -> None:
+    """Зурган дээрх хэмжээс бүр хүснэгтэд ч тоогоор гарна."""
+    t = KATALOG.ol("П110-4")
+    mor = dict(husnegt._hemjees_mor(t))
+    assert mor["Нийт өндөр"].startswith("31")
+    assert sum(1 for k in mor if k.startswith("Траверс ")) == len(t.tor)
+    assert "Тросостойк өндөр" in mor
+
+
 def test_dotor_huree_блокгүй_бол_өгөгдмөл_зай() -> None:
     """Танай блок байхгүй орчинд өгөгдмөл захын зайд унана."""
     assert husnegt.dotor_huree("A3", "") == (20.0, 5.0, 415.0, 292.0)

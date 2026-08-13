@@ -71,6 +71,7 @@ from zurag import (
     _hagas_urgun,
     _too,
     _tulguur_zurah,
+    hemjees_delgerengui,
     lay,
 )
 
@@ -549,6 +550,9 @@ TUUVER_BAGANA: tuple[tuple[str, float], ...] = (
 TUUVER_MOR = 4.6  # нэг мөрийн өндөр, мм
 TUUVER_HOOSON = 8  # гараар бөглөх хоосон мөрийн тоо
 
+#: Хоёр хуудасны хоорондын зай, бүдүүвч хуудасны өргөний хувиар.
+HUUDAS_ZAI = 0.06
+
 
 class Huudas:
     """Нэг тулгуурыг танай АЗ хуудасны блок дотор зурна.
@@ -572,6 +576,7 @@ class Huudas:
         zursan: str = ZURSAN,
         shalgasan: str = SHALGASAN,
         zurag_ner: str = "",
+        dwg: Drawing | None = None,
     ) -> None:
         """Хуудасны бүсүүдийг тооцоод масштабыг сонгоно."""
         self.t = t
@@ -610,7 +615,9 @@ class Huudas:
             t.undur + self.suuri_undur_m, 2.0 * _hagas_urgun(t), bolomj, self.zurag_urgun * 0.80
         )
 
-        self.dwg = Drawing(options=DrawingOptions(dwg_format="2018"))
+        self.dwg = dwg if dwg is not None else Drawing(
+            options=DrawingOptions(dwg_format="2018")
+        )
         self.z = Zurag(self.dwg)
 
     def mm(self, v: float) -> float:
@@ -811,6 +818,284 @@ class Huudas:
         return self.dwg
 
 
+class Delgerengui:
+    """ХОЁР ДАХЬ хуудас: тулгуурыг ТОМРУУЛЖ, бүх хэмжээстэй нь зурна.
+
+    Бүдүүвч хуудсанд тулгуур бүхэлдээ багтах ёстой тул масштаб нь заавал жижиг
+    гардаг (110 кВ-ын тулгуур АЗ дээр 1:200 орчим). Тэр масштабаар хэмжээсийн
+    тоо нягтарч, уншигдахаа болино. Тиймээс дэлгэрэнгүйг ТУСДАА хүрээнд, аль
+    болох том масштабаар гаргана — АЗ дээр багтахгүй бол цаасыг нь A2, A1 болгож
+    томруулна. Хоёр хуудас нэг DWG дотор зэрэгцэж суух тул хэвлэхэд ч, харахад
+    ч хамт явна.
+
+    `ox` нь модель орчин дахь хэвтээ шилжилт (метр) — бүдүүвч хуудасны баруун
+    талд байрлуулна.
+    """
+
+    def __init__(
+        self,
+        t: Tulguur,
+        *,
+        ox: float = 0.0,
+        buduuvch_masshtab: int = 200,
+        huree_block: str = A3_BLOCK,
+        shtamp: str = SHTAMP_BLOCK,
+        tosol: str = "",
+        ognoo: str = "",
+        shifr_zurag: str = "",
+        inzhener: str = INZHENER,
+        zursan: str = ZURSAN,
+        shalgasan: str = SHALGASAN,
+        dwg: Drawing | None = None,
+    ) -> None:
+        """Багтах хамгийн ТОМ масштаб ба хамгийн ЖИЖИГ цаасыг сонгоно."""
+        self.t = t
+        self.ox = ox
+        self.tosol = tosol
+        self.ognoo = ognoo
+        self.shifr_zurag = shifr_zurag
+        self.inzhener = inzhener
+        self.zursan = zursan or inzhener
+        self.shalgasan = shalgasan
+
+        self.suuri_undur_m = _suuri_undur(t)
+        self.tsaas, self.masshtab = _delgerengui_songoh(t, self.suuri_undur_m, buduuvch_masshtab)
+        # Танай хүрээний блок нь зөвхөн АЗ-ынх.
+        self.huree_block = huree_block if self.tsaas == "A3" else ""
+        self.tsaas_urgun, self.tsaas_undur = TSAAS[self.tsaas]
+        self.x0, self.y0, self.x1, self.y1 = dotor_huree(self.tsaas, self.huree_block)
+        self.shtamp = shtamp if self.tsaas == "A3" else ""
+        self.shtamp_deed = self.y0 + SHTAMP_UNDUR
+        self.garchig_y = self.y1 - 7.0
+
+        self.dwg = dwg if dwg is not None else Drawing(
+            options=DrawingOptions(dwg_format="2018")
+        )
+        self.z = Zurag(self.dwg)
+
+    # -- нэгж ба шилжилт ---------------------------------------------------
+
+    def mm(self, v: float) -> float:
+        """Цаасны миллиметрийг модель метр болгоно."""
+        return v / 1000.0 * self.masshtab
+
+    def px(self, v: float) -> float:
+        """Хэвтээ координат — хуудасны шилжилт нэмэгдсэн."""
+        return self.ox + self.mm(v)
+
+    @property
+    def urgun_m(self) -> float:
+        """Хуудасны нийт өргөн, модель метрээр."""
+        return self.mm(self.tsaas_urgun)
+
+    @property
+    def garchig(self) -> str:
+        """Хуудасны гарчиг."""
+        return f"{self.t.shifr} МАЯГИЙН {self.t.angilal.upper()} ТУЛГУУР"
+
+    # -- зурах туслахууд ---------------------------------------------------
+
+    def shugam(self, x0: float, y0: float, x1: float, y1: float, layer: str = L_HUREE) -> None:
+        """Цаасны мм координатаар шулуун."""
+        self.z.shugam(self.px(x0), self.mm(y0), self.px(x1), self.mm(y1), layer)
+
+    def bichig(
+        self, x: float, y: float, text: str, h_mm: float, *, tov: bool = False,
+        layer: str = L_BICHIG,
+    ) -> None:
+        """Цаасны мм-ээр текст."""
+        p = (self.px(x), self.mm(y))
+        self.dwg.text(
+            p, text, height=self.mm(h_mm), style=BICHGIIN_HEV,
+            halign=1 if tov else 0, align_point=p if tov else None, layer=lay(layer),
+        )
+
+    # -- хэсгүүд -----------------------------------------------------------
+
+    def huree(self) -> None:
+        """Хүрээ: АЗ бол танай блок, том цаас бол өөрсдөө зурна."""
+        if self.huree_block:
+            self.dwg.add(
+                Insert(self.huree_block, (self.ox, 0.0), scale=self.masshtab / 1000.0,
+                       layer=lay(L_HUREE))
+            )
+            return
+        for a, b in (
+            ((0.0, 0.0), (self.tsaas_urgun, self.tsaas_undur)),
+            ((self.x0, self.y0), (self.x1, self.y1)),
+        ):
+            self.z.zam(
+                [
+                    (self.px(a[0]), self.mm(a[1])), (self.px(b[0]), self.mm(a[1])),
+                    (self.px(b[0]), self.mm(b[1])), (self.px(a[0]), self.mm(b[1])),
+                ],
+                L_HUREE,
+                hulhii=True,
+            )
+
+    def gartsag(self) -> None:
+        """Гарчиг, масштаб, цаасны хэмжээ."""
+        cx = (self.x0 + self.x1) / 2.0
+        self.bichig(cx, self.garchig_y, f"{self.garchig} — ДЭЛГЭРЭНГҮЙ", 4.5, tov=True)
+        urt = len(self.garchig) * 4.5 * 0.62 / 2.0 + 20.0
+        self.shugam(cx - urt, self.garchig_y - 2.0, cx + urt, self.garchig_y - 2.0, L_BICHIG)
+        self.bichig(cx, self.garchig_y - 7.5, f"М 1:{self.masshtab}   ({self.tsaas})", 3.0,
+                    tov=True)
+
+    def zurag(self) -> None:
+        """Тулгуур + суурийн план, БҮХ хэмжээстэй."""
+        cx = (self.x0 + self.x1) / 2.0
+        hagas_mm = self.suuri_undur_m / 2.0 / self.masshtab * 1000.0
+        cy = self.y0 + 14.0 + hagas_mm
+        gazar = cy + hagas_mm + 12.0
+
+        self.z.shiljuuleh(self.px(cx), self.mm(gazar))
+        _tulguur_zurah(self.z, self.t, hemjees=False)
+        hemjees_delgerengui(self.z, self.t, max(2.0 * _hagas_urgun(self.t), 4.0),
+                            self.mm(H_HEM * 1.3))
+        self.z.shiljuuleh(0.0, 0.0)
+
+        self.z.shiljuuleh(self.px(cx), self.mm(cy))
+        _suuri_plan_zurah(self.z, self.t)
+        self.z.shiljuuleh(0.0, 0.0)
+        self.bichig(cx, self.y0 + 6.0, f"СУУРИЙН ПЛАН   {_too(self.t.suuri)} м", 2.5, tov=True)
+
+    def hemjeesiin_husnegt(self) -> None:
+        """ХЭМЖЭЭСИЙН ХҮСНЭГТ — зурган дээрх бүх тоог бичгээр давхарлана.
+
+        Тулгуур нарийн, өндөр тул хуудасны баруун тал сул үлддэг. Тэнд хэмжээсийг
+        ТООГООР нь гаргаснаар зургаас уншиж чадахгүй байсан ч утга нь тодорхой
+        болно — мөн хуулж бичихэд амар.
+        """
+        urgun = 96.0
+        y_deed = self.garchig_y - 22.6
+        x0 = self.x1 - urgun
+        y = self.garchig_y - 16.0
+        mor_h = 5.0
+
+        self.bichig(x0, y, "ХЭМЖЭЭСИЙН ХҮСНЭГТ", 3.2)
+        self.shugam(x0, y - 1.6, x0 + 52.0, y - 1.6, L_BICHIG)
+        y -= 8.0
+        self.shugam(x0, y + mor_h - 1.4, self.x1, y + mor_h - 1.4)
+        for ner, utga in _hemjees_mor(self.t):
+            if not utga:
+                continue
+            self.bichig(x0 + 1.5, y, ner, 2.5)
+            self.bichig(self.x1 - 1.5 - len(utga) * 2.5 * USEG_HARTSAA, y, utga, 2.5)
+            self.shugam(x0, y - 1.4, self.x1, y - 1.4)
+            y -= mor_h
+        for x in (x0, self.x1):
+            self.shugam(x, y + mor_h - 1.4, x, y_deed)
+
+        y -= 5.0
+        for mor in (
+            f"Эх сурвалж: ЭСП каталог 5713тм-т2, лист {self.t.huudas}",
+            f"Монтажийн схем: {self.t.shem}" if self.t.shem else "",
+            "Хэмжээс метрээр. Сүлжээний пропорц — 3.407.2-170.2 06КМ.",
+            "" if self.t.batalgaa else "≈ Хэмжээс каталогийн эскизээс уншаагүй.",
+        ):
+            if mor:
+                self.bichig(x0, y, mor, 2.2)
+                y -= 4.0
+
+    def bulangiin_husnegt(self) -> None:
+        """Булангийн хүснэгт (зөвхөн АЗ дээр — блок нь АЗ-ынх)."""
+        _shtamp_oruulah(
+            self.dwg, self.mm, self.shtamp, self.x1, self.y0, self.masshtab / 1000.0,
+            {
+                "ТӨСЛИЙН-НЭР": self.tosol,
+                "ЗУРАГ-НЭР": f"{self.garchig} (дэлгэрэнгүй)",
+                "АЗ": self.tsaas,
+                "И_НЭР": self.inzhener,
+                "МАСШ": f"1:{self.masshtab}",
+                "ОГНОО": self.ognoo,
+                "Г_НЭР": self.zursan,
+                "Ш_НЭР": self.shalgasan,
+                "ШИФР": self.shifr_zurag,
+                "ТОО": "2",
+            },
+            ox=self.ox,
+        )
+
+    def barih(self) -> Drawing:
+        """Хуудсыг угсарна."""
+        self.huree()
+        self.gartsag()
+        self.zurag()
+        self.hemjeesiin_husnegt()
+        self.bulangiin_husnegt()
+        return self.dwg
+
+
+def _hemjees_mor(t: Tulguur) -> list[tuple[str, str]]:
+    """Хэмжээсийн хүснэгтийн мөрүүд: (нэр, утга)."""
+    from zurag import _gib, _ish_hagas, _orgon
+
+    gib = _gib(t)
+    mor: list[tuple[str, str]] = [
+        ("Нийт өндөр", f"{_too(t.undur)} м"),
+        ("Хугарлын шугам (доод траверс)", f"{_too(gib)} м"),
+        ("Суурийн өргөн", f"{_too(t.suuri)} м"),
+        ("Ишний өргөн хугарал дээр", f"{_too(2.0 * _ish_hagas(t))} м"),
+        ("Оройн өргөн", f"{_too(2.0 * _orgon(t, t.undur))} м"),
+    ]
+    for i, tor in enumerate(t.tor, start=1):
+        gar = f"{_too(tor.zuun)} / {_too(tor.baruun)}"
+        mor.append((f"Траверс {i}: түвшин / зүүн-баруун", f"{_too(tor.z)} м · {gar} м"))
+    if t.tor:
+        deed = max(x.z for x in t.tor)
+        if t.undur > deed + 0.05:
+            mor.append(("Тросостойк өндөр", f"{_too(t.undur - deed)} м"))
+    if t.tatlaga > 0.0:
+        mor.append(("Оттяжкийн анкер тэнхлэгээс", f"{_too(t.tatlaga)} м"))
+    if t.hol > 0.0:
+        mor.append(("Хөл хоорондын зай", f"{_too(t.hol)} м"))
+    if t.jin is not None:
+        mor.append(("Масс (цинкгүй)", f"{t.jin:,.0f} кг".replace(",", " ")))
+    if t.jin_ts is not None:
+        mor.append(("Масс (цинктэй)", f"{t.jin_ts:,.0f} кг".replace(",", " ")))
+    return mor
+
+
+def _delgerengui_songoh(t: Tulguur, suuri_undur_m: float, buduuvch: int) -> tuple[str, int]:
+    """Дэлгэрэнгүй хуудасны (цаас, масштаб). Аль болох ТОМ, аль болох жижиг цаас.
+
+    Бүдүүвчээс дор хаяж нэг шаталбар том байх ёстой — эс тэгвээс хоёр хуудас
+    ижил харагдаж, дэлгэрэнгүй нь утгаа алдана. Тиймээс бүдүүвчийн масштабаас
+    багассан утгуудыг л үзнэ.
+    """
+    undur_m = t.undur + suuri_undur_m
+    urgun_m = 2.0 * _hagas_urgun(t) * 1.45  # хэмжээсийн шугам хоёр талдаа зай эзэлнэ
+    nariin = [m for m in MASSHTAB if m < buduuvch] or [MASSHTAB[0]]
+    for tsaas in ("A3", "A2", "A1", "A0"):
+        x0, y0, x1, y1 = dotor_huree(tsaas, "")
+        bolomj_u = (y1 - y0 - 34.0) * 0.97  # гарчиг, суурийн план, штампын зай
+        bolomj_o = (x1 - x0) * 0.92
+        for m in nariin:  # MASSHTAB өсөх дараалалтай — эхний таарсан нь ХАМГИЙН ТОМ
+            if undur_m * 1000.0 / m <= bolomj_u and urgun_m * 1000.0 / m <= bolomj_o:
+                return tsaas, m
+    return "A0", MASSHTAB[-1]
+
+
+def _suuri_plan_zurah(z: Zurag, t: Tulguur) -> None:
+    """Фундаментын план — (0,0) төвтэй, модель метрээр."""
+    hol = _hol_bairlal(t)
+    fund = max(t.suuri * 0.16, 0.5)
+    for px, py in hol:
+        z.zam(
+            [
+                (px - fund / 2, py - fund / 2), (px + fund / 2, py - fund / 2),
+                (px + fund / 2, py + fund / 2), (px - fund / 2, py + fund / 2),
+            ],
+            L_GAZAR,
+            hulhii=True,
+        )
+    rx = max((abs(p[0]) for p in hol), default=1.0) + fund
+    ry = max((abs(p[1]) for p in hol), default=1.0) + fund
+    z.shugam(-rx, 0.0, rx, 0.0, L_TENH)
+    z.shugam(0.0, -ry, 0.0, ry, L_TENH)
+
+
 def _shtamp_oruulah(
     dwg: Drawing,
     mm: Callable[[float], float],
@@ -819,6 +1104,7 @@ def _shtamp_oruulah(
     by: float,
     scale: float,
     utga: dict[str, str],
+    ox: float = 0.0,
 ) -> None:
     """Булангийн хүснэгтийг оруулж атрибутуудыг бөглөнө.
 
@@ -830,7 +1116,7 @@ def _shtamp_oruulah(
         return
     atributtai = bool(SHTAMP_ATT)
     dwg.add(
-        Insert(shtamp, (mm(bx), mm(by)), scale=scale, layer=lay(L_HUREE),
+        Insert(shtamp, (ox + mm(bx), mm(by)), scale=scale, layer=lay(L_HUREE),
                atributtai=atributtai)
     )
     if not atributtai:
@@ -840,7 +1126,7 @@ def _shtamp_oruulah(
             Attrib(
                 tag,
                 utga.get(tag, ""),
-                (mm(bx + ax), mm(by + ay)),
+                (ox + mm(bx + ax), mm(by + ay)),
                 height=mm(ah),
                 style=BICHGIIN_HEV,
                 layer=lay(L_HUREE),
@@ -961,9 +1247,23 @@ def _taslah(text: str, urt: int) -> list[str]:
 
 
 def neg_huudas(t: Tulguur, out: Path, **tohirgoo: object) -> bool:
-    """Нэг тулгуурыг АЗ хуудас болгож DWG-д бичнэ."""
-    h = Huudas(t, **tohirgoo)  # type: ignore[arg-type]
-    return _bicheh(h.barih(), out, f"{t.shifr} (A3, 1:{h.masshtab})")
+    """Нэг тулгуурын ХОЁР хуудсыг нэг DWG-д бичнэ.
+
+    Зүүнд бүдүүвч (АЗ, танай хүрээ), баруунд дэлгэрэнгүй (том масштаб, хэрэгтэй
+    бол том цаас). Сонголтгүй — хоёулаа үргэлж гарна.
+    """
+    dwg = Drawing(options=DrawingOptions(dwg_format="2018"))
+    h = Huudas(t, dwg=dwg, **tohirgoo)  # type: ignore[arg-type]
+    h.barih()
+    zai = h.mm(TSAAS["A3"][0]) * HUUDAS_ZAI
+    d = Delgerengui(
+        t, dwg=dwg, ox=h.mm(TSAAS["A3"][0]) + zai, buduuvch_masshtab=h.masshtab,
+        **{k: v for k, v in tohirgoo.items() if k != "masshtab"},  # type: ignore[arg-type]
+    )
+    d.barih()
+    return _bicheh(
+        dwg, out, f"{t.shifr}  бүдүүвч 1:{h.masshtab} + дэлгэрэнгүй {d.tsaas} 1:{d.masshtab}"
+    )
 
 
 def _buleg(t: Tulguur) -> str:

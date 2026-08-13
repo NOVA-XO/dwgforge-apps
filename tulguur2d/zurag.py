@@ -20,6 +20,7 @@ r"""Тулгуурын 2 хэмжээст эскиз — каталогийн м
 
 from __future__ import annotations
 
+import itertools
 import json
 import math
 import sys
@@ -136,6 +137,9 @@ ISH_HARTSAA = 0.30  # ишний өргөн = суурийн өргөний ху
 TOR_UNDUR = 0.55  # м, траверсын үндэсний өндөр
 TOR_UZUUR = 0.14  # м, траверсын үзүүрийн өндөр
 TOR_ULGUUR = 0.35  # м, утас өлгөх цэгийн урт
+UZUUR_MUR = 0.80  # тросостойкийн суурь = ишний өргөний хувь (мөр үүсгэнэ)
+UZUUR_HESEG = 0.72  # өндрийнх нь энэ хувь нь сүлжээтэй, дээр нь нимгэн үзүүр
+UZUUR_NARIIN = 0.30  # сүлжээн хэсгийн оройд үлдэх өргөн (суурийн хувь)
 
 
 def _lerp(a: float, b: float, t: float) -> float:
@@ -366,26 +370,39 @@ def _tor_zurah(z: Zurag, t: Tulguur, x_tov: float = 0.0, bie_hagas: float | None
 
 
 def _uzuur_zurah(z: Zurag, t: Tulguur, z_deed: float) -> None:
-    """Тросостойк(ууд): ишний өргөнөөс оройд нийлэх нарийн сүлжээн жад.
+    """Тросостойк(ууд) — сүлжээн хэсэг + түүн дээрх нимгэн үзүүр.
 
-    Өмнө нь тогтмол 0.45 м суурьтай гурвалжин байсан. Жинхэнэ тросостойк нь
-    ишнийхээ өргөнөөс эхэлж (06КМ: 605 мм, огтлол 11-11: 350×350) оройд
-    нийлдэг — тиймээс суурийг нь ишнээс тооцно.
+    ХЭЛБЭР НЬ ЦЭВЭР КОНУС БИШ. Каталогийн эскиз (лист 18, 23) хоёуланд нь
+    тросостойк нь ишнээсээ мөр үүсгэн эхэлж, өндрийнхөө ихэнхийг бага зэрэг
+    нарийсан явж байгаад дээд хэсэгтээ л нимгэн үзүүр болдог. Өмнө нь
+    суурианаас шууд орой хүртэл шулуун татдаг байсан тул хэт шовх конус
+    гарч, оройн сүүлчийн панелийн хөндлөвч жижиг хайрцаг үүсгэдэг байв.
     """
     if t.uzuur <= 0 or t.undur <= z_deed + 0.05:
         return
     a = _orgon(t, z_deed)
-    ug = a if t.uzuur == 1 else max(a * 0.45, 0.18)
+    # Суурь нь ишнээсээ БАГА — ингэснээр мөр харагдана.
+    ug = a * UZUUR_MUR if t.uzuur == 1 else max(a * 0.40, 0.15)
+    undur = t.undur - z_deed
+    z_hus = z_deed + undur * UZUUR_HESEG  # сүлжээн хэсгийн орой
+    hus = max(ug * UZUUR_NARIIN, 0.04)  # тэнд үлдэх ХАГАС өргөн
+
+    def hagas(zz: float) -> float:
+        """`zz` өндөр дэх хагас өргөн — сүлжээн хэсэг дотор шугаман."""
+        return _lerp(ug, hus, (zz - z_deed) / max(z_hus - z_deed, 1e-6))
+
     for tov in (0.0,) if t.uzuur == 1 else (-a * 0.75, a * 0.75):
-        z.zam([(tov - ug, z_deed), (tov, t.undur)], L_TROS)
-        z.zam([(tov + ug, z_deed), (tov, t.undur)], L_TROS)
-        # Доторх раскос — ишийнхтэй ижил модулиар
-        tuvshin = _tuvshin(z_deed, t.undur, PANEL_ISH)
+        z.shugam(tov - ug, z_deed, tov + ug, z_deed, L_TROS)  # мөр
+        z.zam([(tov - ug, z_deed), (tov - hus, z_hus), (tov, t.undur)], L_TROS)
+        z.zam([(tov + ug, z_deed), (tov + hus, z_hus), (tov, t.undur)], L_TROS)
+        # Раскос зөвхөн сүлжээн хэсэгт. Хамгийн дээд хөндлөвчийг ТАВИХГҮЙ:
+        # үзүүрийн ёроолд хайрцаг үүсгэдэг.
+        tuvshin = _tuvshin(z_deed, z_hus, PANEL_ISH)
         for i in range(len(tuvshin) - 1):
             za, zb = tuvshin[i], tuvshin[i + 1]
-            wa = ug * (t.undur - za) / max(t.undur - z_deed, 1e-6)
-            wb = ug * (t.undur - zb) / max(t.undur - z_deed, 1e-6)
-            z.shugam(tov - wb, zb, tov + wb, zb, L_TROS)
+            wa, wb = hagas(za), hagas(zb)
+            if i < len(tuvshin) - 2:
+                z.shugam(tov - wb, zb, tov + wb, zb, L_TROS)
             z.shugam(tov - wa, za, tov + wb, zb, L_TROS)
             z.shugam(tov + wa, za, tov - wb, zb, L_TROS)
 
@@ -536,6 +553,52 @@ def _hemjees_zurah(z: Zurag, t: Tulguur, urgun: float, h: float) -> None:
         for tal, urt in ((-1.0, tor.zuun), (1.0, tor.baruun)):
             if urt > 0.4:
                 z.bichig(tal * urt * 0.55, tor.z + h * 0.5, _too(urt), h, layer=L_HEM, tov=True)
+
+
+def hemjees_delgerengui(z: Zurag, t: Tulguur, urgun: float, h: float) -> None:
+    """БҮХ хэмжээсийг гаргана — дэлгэрэнгүй хуудсанд зориулав.
+
+    `_hemjees_zurah` нь бүдүүвчид хангалттай дөрвөн хэмжээс тавьдаг. Энд
+    траверс бүрийн түвшин, гар тус бүрийн урт, хугарлын шугам, ишний өргөн,
+    тросостойкийн өндөр — гаргаж болох бүхнийг тавина.
+
+    Босоо хэмжээс нь ХОЁР баганад ордог: дотор талд шат дараалсан гинж
+    (газар → хугарал → траверс бүр → орой), гадна талд нийт өндөр. Ингэснээр
+    гинжний нийлбэр нийт өндөртэй тэнцэж байгааг зурагнаас шалгаж болно.
+    """
+    hagas = urgun / 2.0
+    x_gin = hagas + max(1.2, urgun * 0.06)  # гинжин хэмжээс
+    x_niit = x_gin + h * 4.5  # нийт өндөр
+
+    z.hem_bosoo(x_niit, 0.0, t.undur, _too(t.undur), h)
+
+    tuvshin = [0.0]
+    gib = _gib(t)
+    if 0.05 < gib < t.undur - 0.05:
+        tuvshin.append(gib)
+    tuvshin += [tor.z for tor in t.tor if 0.05 < tor.z < t.undur - 0.05]
+    tuvshin.append(t.undur)
+    tuvshin = sorted({round(v, 3) for v in tuvshin})
+    for za, zb in itertools.pairwise(tuvshin):
+        if zb - za > 0.05:
+            z.hem_bosoo(x_gin, za, zb, _too(zb - za), h)
+
+    # Хэвтээ: суурь, ишний өргөн, траверсын гар бүр
+    if t.suuri > 0.05:
+        z.hem_hevtee(-1.6, -t.suuri / 2.0, t.suuri / 2.0, _too(t.suuri), h)
+    if t.tatlaga > 0.0:
+        z.hem_hevtee(-2.8, -t.tatlaga, t.tatlaga, _too(2 * t.tatlaga), h)
+    ish = _orgon(t, gib)
+    if ish > 0.05:
+        z.hem_hevtee(gib - h * 2.2, -ish, ish, _too(2 * ish), h)
+    for tor in t.tor:
+        for tal, urt in ((-1.0, tor.zuun), (1.0, tor.baruun)):
+            if urt <= 0.4:
+                continue
+            # Гарын урт нь ТЭНХЛЭГЭЭС хэмжигдэнэ (каталог ч мөн адил), тиймээс
+            # хэмжээсийн шугам голоос үзүүр хүртэл.
+            x0, x1 = sorted((0.0, tal * urt))
+            z.hem_hevtee(tor.z + h * 2.4, x0, x1, _too(urt), h)
 
 
 def _pasport(z: Zurag, t: Tulguur, urgun: float, h: float) -> float:
