@@ -81,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
                    help="танай АЗ хуудасны блок дотор, тайлбар ба булангийн хүснэгттэй")
     p.add_argument("--tosol", default="", help="A3: төслийн нэр (булангийн хүснэгтэд)")
     p.add_argument("--ognoo", default="", help="A3: огноо")
-    p.add_argument("--zurag-shifr", default="", help="A3: зургийн шифр (жишээ ZS25-08-I-1)")
+    p.add_argument("--zurag-shifr", default="", help="A3: зургийн шифр (булангийн хүснэгтэд)")
     p.add_argument("--tugjee-arilgah", action="store_true",
                    help="үлдэгдэл .dwl түгжээг устгана (AutoCAD-д нээлттэй зураг байх ёсгүй)")
     p.add_argument("--out", type=Path, default=OUTDIR, help=f"гаралтын хавтас ({OUTDIR.name})")
